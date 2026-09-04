@@ -13,6 +13,8 @@ export interface ApiUser {
   last_played: string | null;
 }
 
+export interface PublicSocialLink { id: string; label: string; url: string; icon: string; position: number }
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body) headers.set("Content-Type", "application/json");
@@ -34,6 +36,7 @@ export const api = {
   addReview: (data: { rating: number; comment: string | null }) => request("/api/reviews", { method: "POST", body: JSON.stringify(data) }),
   rooms: () => request<{ rooms: Room[] }>("/api/rooms"),
   onlineCount: () => request<{ count: number }>("/api/online-count"),
+  socialLinks: () => request<{ links: PublicSocialLink[] }>("/api/social-links"),
   room: (code: string) => request<{ room: Room | null }>(`/api/rooms?code=${encodeURIComponent(code.toUpperCase())}`),
   createRoom: (data: { isPublic: boolean; token: string; name: string; state: RoomState }) => request<{ room: Room }>("/api/rooms", { method: "POST", body: JSON.stringify(data) }),
   joinRoom: (code: string, token: string, name: string) => request<{ room: Room }>(`/api/rooms/${code.toUpperCase()}`, { method: "PATCH", body: JSON.stringify({ action: "join", token, name }) }),

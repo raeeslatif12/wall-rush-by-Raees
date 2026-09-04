@@ -64,3 +64,21 @@ CREATE TABLE IF NOT EXISTS reviews (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS reviews_created_idx ON reviews (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS social_links (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  label text NOT NULL UNIQUE,
+  url text NOT NULL,
+  icon text NOT NULL DEFAULT '🔗',
+  enabled boolean NOT NULL DEFAULT true,
+  position integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS social_links_enabled_position_idx ON social_links (enabled, position, label);
+INSERT INTO social_links (label, url, icon, position) VALUES
+  ('Instagram', 'https://www.instagram.com/wall_rush_', '📸', 0),
+  ('TikTok', 'https://www.tiktok.com/@wall_rush_', '🎵', 1),
+  ('Telegram', 'https://t.me/wall_rush1', '✈️', 2),
+  ('YouTube', 'https://www.youtube.com/@wall_rush', '▶️', 3)
+ON CONFLICT (label) DO NOTHING;

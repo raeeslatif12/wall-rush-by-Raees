@@ -1,15 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Activity, BarChart3, Bot, ChevronRight, CircleUserRound, DoorOpen, Gauge, KeyRound, LogOut, Plus, RefreshCw, Search, ShieldCheck, Swords, Trash2, Trophy, Users, UserRoundCog, X } from "lucide-react";
+import { Activity, BarChart3, Bell, Bot, Check, ChevronRight, CircleUserRound, DoorOpen, ExternalLink, Gauge, KeyRound, Link2, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, ShieldCheck, Sun, Swords, Trash2, Trophy, Users, UserRoundCog, X } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { adminApi, type AdminAccount, type AdminIdentity, type AdminUser } from "@/lib/admin-api";
+import { adminApi, type AdminAccount, type AdminIdentity, type AdminUser, type SocialLink } from "@/lib/admin-api";
 
 export const Route = createFileRoute("/dashboard-raees")({ component: AdminDashboard });
 
-type Tab = "overview" | "users" | "matches" | "rooms" | "rankings" | "analytics" | "activity" | "admins";
+type Tab = "overview" | "users" | "matches" | "rooms" | "rankings" | "analytics" | "activity" | "links" | "admins";
 const tabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: "overview", label: "Overview", icon: Gauge }, { id: "users", label: "Users", icon: Users }, { id: "matches", label: "Matches", icon: Swords },
-  { id: "rooms", label: "Live rooms", icon: DoorOpen }, { id: "rankings", label: "Rankings", icon: Trophy }, { id: "analytics", label: "Analytics", icon: BarChart3 }, { id: "activity", label: "Audit log", icon: Activity }, { id: "admins", label: "Administrators", icon: UserRoundCog },
+  { id: "rooms", label: "Live rooms", icon: DoorOpen }, { id: "rankings", label: "Rankings", icon: Trophy }, { id: "analytics", label: "Analytics", icon: BarChart3 }, { id: "activity", label: "Audit log", icon: Activity }, { id: "links", label: "Social links", icon: Link2 }, { id: "admins", label: "Administrators", icon: UserRoundCog },
+];
+const navGroups: Array<{ label: string; ids: Tab[] }> = [
+  { label: "Workspace", ids: ["overview", "analytics", "activity"] },
+  { label: "Game operations", ids: ["rooms", "matches", "rankings"] },
+  { label: "Directory", ids: ["users"] },
+  { label: "Configuration", ids: ["links", "admins"] },
 ];
 const number = new Intl.NumberFormat("en-US");
 const date = (value: string | null | undefined) => value ? new Date(value).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "Never";
@@ -20,33 +26,41 @@ function AdminDashboard() {
   const [tab, setTab] = useState<Tab>("overview");
   const [loginError, setLoginError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
-  const [data, setData] = useState<any>({ stats: {}, users: [], matches: [], rooms: [], growth: [], visits: [], dailyMatches: [], split: [], activity: [] });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">(() => typeof window !== "undefined" && window.localStorage.getItem("wallrush-admin-theme") === "light" ? "light" : "dark");
+  const [data, setData] = useState<any>({ stats: {}, users: [], matches: [], rooms: [], growth: [], visits: [], dailyMatches: [], split: [], activity: [], links: [] });
 
   async function load() {
     setRefreshing(true);
-    try { const [overview, users, matches, rooms, analytics, activity] = await Promise.all([adminApi.overview(), adminApi.users(), adminApi.matches(), adminApi.rooms(), adminApi.analytics(), adminApi.activity()]); setData({ ...overview, ...users, ...matches, ...rooms, ...analytics, ...activity }); } catch (error) { if (error instanceof Error && error.message.includes("authentication")) setAdmin(null); } finally { setRefreshing(false); }
+    try { const [overview, users, matches, rooms, analytics, activity, links] = await Promise.all([adminApi.overview(), adminApi.users(), adminApi.matches(), adminApi.rooms(), adminApi.analytics(), adminApi.activity(), adminApi.socialLinks()]); setData({ ...overview, ...users, ...matches, ...rooms, ...analytics, ...activity, ...links }); } catch (error) { if (error instanceof Error && error.message.includes("authentication")) setAdmin(null); } finally { setRefreshing(false); }
   }
+  useEffect(() => { window.localStorage.setItem("wallrush-admin-theme", theme); }, [theme]);
   useEffect(() => { adminApi.session().then((result) => { setAdmin(result.admin); }).catch((caught) => { if (caught instanceof Error && !caught.message.includes("authentication")) setLoginError(caught.message); }).finally(() => setChecking(false)); }, []);
   useEffect(() => { if (admin) void load(); }, [admin]);
   if (checking) return <div className="admin-loading">Checking secure admin session...</div>;
   if (!admin) return <AdminLogin onLogin={setAdmin} error={loginError} setError={setLoginError} />;
   const stats = data.stats as Record<string, number>;
-  return <div className="admin-shell">
+  const visibleTabs = tabs.filter(({ id }) => id !== "admins" || admin.role === "super_admin");
+  const selectTab = (next: Tab) => { setTab(next); setMobileNavOpen(false); };
+  return <div className={`admin-shell ${sidebarCollapsed ? "is-collapsed" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`} data-theme={theme}>
+    <div className="admin-mobile-backdrop" onClick={() => setMobileNavOpen(false)} />
     <aside className="admin-sidebar">
-      <div className="admin-brand"><span className="admin-brand-mark"><ShieldCheck size={22} /></span><span><strong>WallRush</strong><small>Control center</small></span></div>
-      <div className="admin-secure"><span className="admin-live-dot" /> Private admin mode</div>
-      <nav className="admin-nav">{tabs.filter(({ id }) => id !== "admins" || admin.role === "super_admin").map(({ id, label, icon: Icon }) => <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}><Icon size={17} />{label}{id === "rooms" && stats["activeRooms"] ? <b>{stats["activeRooms"]}</b> : null}</button>)}</nav>
-      <div className="admin-sidebar-foot"><div className="admin-identity"><CircleUserRound size={30} /><span><strong>{admin.username}</strong><small>{admin.role === "super_admin" ? "Super administrator" : "Administrator"}</small></span></div><button className="admin-logout" onClick={() => { void adminApi.logout().finally(() => setAdmin(null)); }}><LogOut size={16} /> Sign out</button></div>
+      <div className="admin-brand"><span className="admin-brand-mark"><ShieldCheck size={22} /></span><span className="admin-brand-copy"><strong>WallRush</strong><small>Control center</small></span><button className="admin-sidebar-collapse" onClick={() => setSidebarCollapsed((current) => !current)} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>{sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}</button></div>
+      <div className="admin-secure"><span className="admin-live-dot" /> <span>Private admin mode</span></div>
+      <nav className="admin-nav">{navGroups.map((group) => <div className="admin-nav-group" key={group.label}><p>{group.label}</p>{group.ids.map((id) => { const item = visibleTabs.find((tabItem) => tabItem.id === id); if (!item) return null; const Icon = item.icon; return <button key={id} className={tab === id ? "active" : ""} onClick={() => selectTab(id)} title={item.label}><Icon size={17} /><span>{item.label}</span>{id === "rooms" && stats["activeRooms"] ? <b>{stats["activeRooms"]}</b> : null}</button>; })}</div>)}</nav>
+      <div className="admin-sidebar-foot"><div className="admin-identity"><CircleUserRound size={30} /><span><strong>{admin.username}</strong><small>{admin.role === "super_admin" ? "Super administrator" : "Administrator"}</small></span></div><button className="admin-logout" onClick={() => { void adminApi.logout().finally(() => setAdmin(null)); }}><LogOut size={16} /> <span>Sign out</span></button></div>
     </aside>
     <main className="admin-main">
-      <header className="admin-topbar"><div><p className="admin-eyebrow">WallRush / Administration</p><h1>{tabs.find((item) => item.id === tab)?.label}</h1></div><button className="admin-refresh" onClick={() => void load()} disabled={refreshing}><RefreshCw size={16} className={refreshing ? "spin" : ""} /> {refreshing ? "Refreshing" : "Refresh data"}</button></header>
-      {tab === "overview" && <Overview stats={stats} />}
+      <header className="admin-topbar"><div className="admin-title-block"><button className="admin-mobile-menu" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation"><Menu size={20} /></button><div><p className="admin-breadcrumb"><span>WallRush</span><ChevronRight size={13} /><span>Administration</span><ChevronRight size={13} /><strong>{tabs.find((item) => item.id === tab)?.label}</strong></p><h1>{tabs.find((item) => item.id === tab)?.label}</h1><p className="admin-topbar-subtitle">A calm, focused view of your game operations.</p></div></div><div className="admin-topbar-actions"><button className="admin-icon-button admin-notification" aria-label="Notifications"><Bell size={16} /><span /></button><button className="admin-theme-toggle" onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}{theme === "dark" ? "Light mode" : "Dark mode"}</button><button className="admin-refresh" onClick={() => void load()} disabled={refreshing}><RefreshCw size={16} className={refreshing ? "spin" : ""} /> {refreshing ? "Refreshing" : "Refresh data"}</button></div></header>
+      {tab === "overview" && <><OverviewHero stats={stats} /><Overview stats={stats} /></>}
       {tab === "users" && <UsersPanel users={data.users} onReload={load} />}
       {tab === "matches" && <MatchesPanel matches={data.matches} />}
       {tab === "rooms" && <RoomsPanel rooms={data.rooms} />}
       {tab === "rankings" && <RankingsPanel users={data.users} />}
       {tab === "analytics" && <AnalyticsPanel data={data} />}
       {tab === "activity" && <ActivityPanel activity={data.activity} />}
+      {tab === "links" && <SocialLinksPanel initialLinks={data.links} />}
       {tab === "admins" && <AdminsPanel admin={admin} onAdminChange={setAdmin} />}
     </main>
   </div>;
@@ -58,6 +72,36 @@ function AdminLogin({ onLogin, error, setError }: { onLogin: (admin: AdminIdenti
   return <div className="admin-login-page"><div className="admin-login-glow" /><form className="admin-login-card" onSubmit={submit}><div className="admin-login-icon"><ShieldCheck size={30} /></div><p className="admin-eyebrow">Restricted access</p><h1>Admin command center</h1><p className="admin-login-copy">Sign in with your private administrator credentials to continue.</p><label>Username<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></label><label>Password<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" required /></label>{error && <p className="admin-error">{error}</p>}<button className="admin-primary" disabled={busy}>{busy ? "Authenticating..." : "Enter dashboard"}<ChevronRight size={17} /></button><small className="admin-login-note">Protected by server-side session authorization</small></form></div>;
 }
 
+function SocialLinksPanel({ initialLinks }: { initialLinks: SocialLink[] }) {
+  const [links, setLinks] = useState<SocialLink[]>(initialLinks);
+  const [newLink, setNewLink] = useState({ label: "", url: "", icon: "🔗" });
+  const [saving, setSaving] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => setLinks(initialLinks), [initialLinks]);
+  function clearNotice() { setNotice(""); setError(""); }
+  async function saveLink(link: SocialLink) {
+    clearNotice(); setSaving(link.id);
+    try { const result = await adminApi.updateSocialLink(link.id, { label: link.label, url: link.url, icon: link.icon, enabled: link.enabled, position: link.position }); setLinks((current) => current.map((item) => item.id === link.id ? result.link : item)); setNotice(`${link.label} was updated.`); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "Could not update this link."); }
+    finally { setSaving(null); }
+  }
+  async function createLink(event: React.FormEvent) {
+    event.preventDefault(); clearNotice(); setSaving("new");
+    try { const result = await adminApi.createSocialLink({ ...newLink, enabled: true, position: links.length }); setLinks((current) => [...current, result.link]); setNewLink({ label: "", url: "", icon: "🔗" }); setNotice(`${result.link.label} was added.`); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "Could not add this link."); }
+    finally { setSaving(null); }
+  }
+  async function removeLink(link: SocialLink) {
+    if (!window.confirm(`Remove ${link.label} from the website?`)) return;
+    clearNotice(); setSaving(link.id);
+    try { await adminApi.deleteSocialLink(link.id); setLinks((current) => current.filter((item) => item.id !== link.id)); setNotice(`${link.label} was removed.`); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "Could not remove this link."); }
+    finally { setSaving(null); }
+  }
+  return <div className="admin-links-layout"><section className="admin-section admin-links-intro"><div className="admin-section-head"><div><p className="admin-eyebrow">Public website</p><h2>Social media / website links</h2></div><Link2 size={23} /></div><p className="admin-panel-copy">Manage the community destinations shown in the public WallRush home page. Disabled links disappear immediately from visitors.</p><form className="admin-link-create" onSubmit={createLink}><div className="admin-link-create-head"><strong>Add a destination</strong><span>HTTPS links only</span></div><div className="admin-form-grid"><label>Label<input value={newLink.label} onChange={(event) => setNewLink({ ...newLink, label: event.target.value })} placeholder="Discord" required /></label><label>Icon<input value={newLink.icon} onChange={(event) => setNewLink({ ...newLink, icon: event.target.value })} maxLength={8} placeholder="💬" /></label><label className="wide">URL<input type="url" value={newLink.url} onChange={(event) => setNewLink({ ...newLink, url: event.target.value })} placeholder="https://discord.com/..." required /></label></div><button className="admin-primary" disabled={saving === "new"}><Plus size={16} /> {saving === "new" ? "Adding..." : "Add link"}</button></form></section><section className="admin-section"><div className="admin-section-head"><div><p className="admin-eyebrow">Live configuration</p><h2>Published destinations</h2></div><span className="admin-count">{links.length} links</span></div>{notice && <p className="admin-success"><Check size={15} /> {notice}</p>}{error && <p className="admin-error">{error}</p>}<div className="admin-links-list">{links.length === 0 && <div className="admin-empty">No destinations configured yet.</div>}{links.map((link) => <div className={`admin-link-row ${link.enabled ? "" : "is-disabled"}`} key={link.id}><div className="admin-link-icon">{link.icon}</div><div className="admin-link-fields"><input aria-label={`${link.label} label`} value={link.label} onChange={(event) => setLinks((current) => current.map((item) => item.id === link.id ? { ...item, label: event.target.value } : item))} /><input aria-label={`${link.label} URL`} value={link.url} onChange={(event) => setLinks((current) => current.map((item) => item.id === link.id ? { ...item, url: event.target.value } : item))} /><a href={link.url} target="_blank" rel="noreferrer" aria-label={`Open ${link.label}`}><ExternalLink size={15} /></a></div><label className="admin-link-enabled"><input type="checkbox" checked={link.enabled} onChange={(event) => setLinks((current) => current.map((item) => item.id === link.id ? { ...item, enabled: event.target.checked } : item))} /> <span>{link.enabled ? "Visible" : "Hidden"}</span></label><button className="admin-secondary admin-link-save" onClick={() => void saveLink(link)} disabled={saving === link.id}>{saving === link.id ? "Saving" : "Save"}</button><button className="admin-icon-button admin-link-delete" onClick={() => void removeLink(link)} disabled={saving === link.id} aria-label={`Remove ${link.label}`}><Trash2 size={16} /></button></div>)}</div></section></div>;
+}
+
 function AdminsPanel({ admin, onAdminChange }: { admin: AdminIdentity; onAdminChange: (admin: AdminIdentity) => void }) {
   const [profileName, setProfileName] = useState(admin.username); const [profilePassword, setProfilePassword] = useState(""); const [newName, setNewName] = useState(""); const [newPassword, setNewPassword] = useState(""); const [admins, setAdmins] = useState<AdminAccount[]>([]); const [showCreate, setShowCreate] = useState(false); const [passwordAdmin, setPasswordAdmin] = useState<AdminAccount | null>(null); const [message, setMessage] = useState(""); const [error, setError] = useState(""); const [saving, setSaving] = useState(false);
   useEffect(() => { adminApi.admins().then((result) => setAdmins(result.admins)).catch((caught) => setError(caught instanceof Error ? caught.message : "Could not load administrators.")); }, []);
@@ -67,6 +111,10 @@ function AdminsPanel({ admin, onAdminChange }: { admin: AdminIdentity; onAdminCh
   async function deleteAdmin(account: AdminAccount) { clearNotice(); if (!window.confirm(`Delete administrator ${account.username}?`)) return; setSaving(true); try { await adminApi.deleteAdmin(account.id); setAdmins((current) => current.filter((item) => item.id !== account.id)); setMessage(`${account.username} was removed.`); } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not delete the administrator."); } finally { setSaving(false); } }
   async function updatePassword(event: React.FormEvent) { event.preventDefault(); if (!passwordAdmin) return; clearNotice(); setSaving(true); try { await adminApi.updateAdminPassword(passwordAdmin.id, newPassword); setNewPassword(""); setPasswordAdmin(null); setMessage(`${passwordAdmin.username}'s password was updated.`); } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not update the password."); } finally { setSaving(false); } }
   return <div className="admin-admin-grid"><section className="admin-section"><div className="admin-section-head"><div><p className="admin-eyebrow">Your access</p><h2>Edit your profile</h2></div><CircleUserRound size={24} /></div><form onSubmit={saveProfile} className="admin-form-grid"><label className="wide">Username<input value={profileName} onChange={(event) => setProfileName(event.target.value)} autoComplete="username" required /></label><label className="wide">New password<input type="password" value={profilePassword} onChange={(event) => setProfilePassword(event.target.value)} placeholder="Leave blank to keep current" autoComplete="new-password" /></label><div className="admin-drawer-actions wide"><button className="admin-primary" disabled={saving}>{saving ? "Saving..." : "Save profile"}</button></div></form></section><section className="admin-section admin-admin-list"><div className="admin-section-head"><div><p className="admin-eyebrow">Access control</p><h2>Manage administrators</h2></div><button className="admin-primary" onClick={() => { clearNotice(); setShowCreate(true); }}><Plus size={16} /> New admin</button></div><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Username</th><th>Role</th><th>Added</th><th /></tr></thead><tbody>{admins.map((account) => <tr key={account.id}><td><strong>{account.username}</strong>{account.id === admin.id && <span className="admin-badge blue">You</span>}</td><td><span className={`admin-badge ${account.role === "super_admin" ? "purple" : "blue"}`}>{account.role === "super_admin" ? "Super admin" : "Admin"}</span></td><td>{date(account.created_at)}</td><td><button className="admin-icon-button" title={`Change ${account.username} password`} onClick={() => { clearNotice(); setNewPassword(""); setPasswordAdmin(account); }} disabled={saving}><KeyRound size={16} /></button>{account.id !== admin.id && <button className="admin-icon-button" title={`Delete ${account.username}`} onClick={() => void deleteAdmin(account)} disabled={saving}><Trash2 size={16} /></button>}</td></tr>)}</tbody></table></div></section>{(message || error) && <p className={error ? "admin-error" : "admin-success"}>{error || message}</p>}{showCreate && <div className="admin-modal-backdrop" onClick={() => setShowCreate(false)}><section className="admin-modal" onClick={(event) => event.stopPropagation()}><div className="admin-drawer-head"><div><p className="admin-eyebrow">Access control</p><h2>Create administrator</h2></div><button className="admin-icon-button" onClick={() => setShowCreate(false)}><X size={18} /></button></div><form onSubmit={createAdmin} className="admin-form-grid"><label className="wide">Username<input value={newName} onChange={(event) => setNewName(event.target.value)} autoComplete="off" required /></label><label className="wide">Password<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={8} autoComplete="new-password" required /></label><div className="admin-drawer-actions wide"><button type="button" className="admin-secondary" onClick={() => setShowCreate(false)}>Cancel</button><button className="admin-primary" disabled={saving}>{saving ? "Creating..." : "Create administrator"}</button></div></form></section></div>}{passwordAdmin && <div className="admin-modal-backdrop" onClick={() => setPasswordAdmin(null)}><section className="admin-modal" onClick={(event) => event.stopPropagation()}><div className="admin-drawer-head"><div><p className="admin-eyebrow">Access control</p><h2>Change password</h2></div><button className="admin-icon-button" onClick={() => setPasswordAdmin(null)}><X size={18} /></button></div><form onSubmit={updatePassword} className="admin-form-grid"><p className="admin-modal-copy wide">Set a new password for {passwordAdmin.username}.</p><label className="wide">New password<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={8} autoComplete="new-password" required /></label><div className="admin-drawer-actions wide"><button type="button" className="admin-secondary" onClick={() => setPasswordAdmin(null)}>Cancel</button><button className="admin-primary" disabled={saving}>{saving ? "Updating..." : "Update password"}</button></div></form></section></div>}</div>;
+}
+
+function OverviewHero({ stats }: { stats: Record<string, number> }) {
+  return <section className="admin-overview-hero"><div><p className="admin-eyebrow">Live operations</p><h2>Good to see you, operator.</h2><p>Monitor the player community, live rooms, and the systems that keep WallRush moving.</p></div><div className="admin-hero-rail"><div><span>Active rooms</span><strong>{number.format(stats["activeRooms"] ?? 0)}</strong></div><div><span>Online now</span><strong>{number.format(stats["online"] ?? 0)}</strong></div><div><span>Today&apos;s visitors</span><strong>{number.format(stats["visitorsToday"] ?? 0)}</strong></div></div></section>;
 }
 
 function Overview({ stats }: { stats: Record<string, number> }) {

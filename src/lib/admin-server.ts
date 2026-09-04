@@ -35,6 +35,9 @@ async function ensureAdminSchema() {
     await sql`CREATE INDEX IF NOT EXISTS visitor_events_date_idx ON visitor_events (visit_date, created_at)`;
     await sql`CREATE TABLE IF NOT EXISTS admin_activity (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), action text NOT NULL, actor text NOT NULL, target_id uuid, details jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now())`;
     await sql`CREATE INDEX IF NOT EXISTS admin_activity_created_idx ON admin_activity (created_at DESC)`;
+    await sql`CREATE TABLE IF NOT EXISTS social_links (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), label text NOT NULL UNIQUE, url text NOT NULL, icon text NOT NULL DEFAULT '🔗', enabled boolean NOT NULL DEFAULT true, position integer NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
+    await sql`CREATE INDEX IF NOT EXISTS social_links_enabled_position_idx ON social_links (enabled, position, label)`;
+    await sql`INSERT INTO social_links (label,url,icon,position) VALUES ('Instagram','https://www.instagram.com/wall_rush_','📸',0),('TikTok','https://www.tiktok.com/@wall_rush_','🎵',1),('Telegram','https://t.me/wall_rush1','✈️',2),('YouTube','https://www.youtube.com/@wall_rush','▶️',3) ON CONFLICT (label) DO NOTHING`;
   })();
   return adminSchemaPromise;
 }
@@ -146,6 +149,21 @@ export async function handleAdminApi(request: Request): Promise<Response | null>
     if (url.pathname === "/api/admin/matches" && request.method === "GET") return json({ matches: await sql`SELECT m.*,u.username FROM matches m JOIN users u ON u.id=m.user_id ORDER BY m.created_at DESC LIMIT 200` });
     if (url.pathname === "/api/admin/rooms" && request.method === "GET") return json({ rooms: await sql`SELECT id,code,is_public,status,p1_name,p2_name,is_bot,updated_at,created_at FROM rooms ORDER BY updated_at DESC LIMIT 200` });
     if (url.pathname === "/api/admin/activity" && request.method === "GET") return json({ activity: await sql`SELECT * FROM admin_activity ORDER BY created_at DESC LIMIT 200` });
+    if (url.pathname === "/api/admin/social-links" && request.method === "GET") return json({ links: await sql`SELECT * FROM social_links ORDER BY position ASC,label ASC` });
+    if (url.pathname === "/api/admin/social-links" && request.method === "POST") {
+      const input = await body(request); const label = text(input?.label, 40); const urlValue = text(input?.url, 500); const icon = text(input?.icon, 8) ?? "🔗"; const position = Number.isInteger(input?.position) ? input.position : 0;
+      if (!label || !urlValue || !/^https?:\/\/[^\s]+$/i.test(urlValue)) return fail("Enter a valid http or https URL.");
+      const rows = await sql`INSERT INTO social_links (label,url,icon,enabled,position) VALUES (${label},${urlValue},${icon},${input?.enabled !== false},${position}) RETURNING *`;
+      await audit("social_link_created", actor.username, rows[0].id, { label }); return json({ link: rows[0] }, 201);
+    }
+    const socialMatch = url.pathname.match(/^\/api\/admin\/social-links\/([0-9a-f-]+)$/i);
+    if (socialMatch && request.method === "PATCH") {
+      const input = await body(request); const label = input?.label === undefined ? null : text(input.label, 40); const urlValue = input?.url === undefined ? null : text(input.url, 500); const icon = input?.icon === undefined ? null : text(input.icon, 8); const position = input?.position === undefined ? null : Number.isInteger(input.position) ? input.position : null; const enabled = typeof input?.enabled === "boolean" ? input.enabled : null;
+      if (input?.label !== undefined && !label || input?.url !== undefined && (!urlValue || !/^https?:\/\/[^\s]+$/i.test(urlValue))) return fail("Enter a valid label and http or https URL.");
+      const rows = await sql`UPDATE social_links SET label=COALESCE(${label},label),url=COALESCE(${urlValue},url),icon=COALESCE(${icon},icon),position=COALESCE(${position},position),enabled=COALESCE(${enabled},enabled),updated_at=now() WHERE id=${socialMatch[1]} RETURNING *`;
+      if (!rows[0]) return fail("Social link not found.", 404); await audit("social_link_updated", actor.username, socialMatch[1], { fields: Object.keys(input ?? {}) }); return json({ link: rows[0] });
+    }
+    if (socialMatch && request.method === "DELETE") { const rows = await sql`DELETE FROM social_links WHERE id=${socialMatch[1]} RETURNING label`; if (!rows[0]) return fail("Social link not found.", 404); await audit("social_link_deleted", actor.username, socialMatch[1], { label: rows[0].label }); return json({ ok: true }); }
     if (url.pathname === "/api/admin/analytics" && request.method === "GET") { const [growth, visits, dailyMatches, split] = await Promise.all([sql`SELECT created_at::date AS day,COUNT(*)::int AS count FROM users WHERE created_at >= CURRENT_DATE - 29 GROUP BY day ORDER BY day`, sql`SELECT visit_date AS day,COUNT(DISTINCT visitor_key)::int AS count FROM visitor_events WHERE visit_date >= CURRENT_DATE - 29 GROUP BY day ORDER BY day`, sql`SELECT created_at::date AS day,COUNT(*)::int AS count FROM matches WHERE created_at >= CURRENT_DATE - 29 GROUP BY day ORDER BY day`, sql`SELECT opponent_type AS type,COUNT(*)::int AS count FROM matches GROUP BY opponent_type`]); return json({ growth, visits, dailyMatches, split }); }
     return fail("Admin API route not found.", 404);
   } catch (caught) { console.error(caught); const duplicate = caught instanceof Error && caught.message.includes("duplicate"); return fail(duplicate ? "That value is already in use." : "Admin request failed.", duplicate ? 409 : 500); }

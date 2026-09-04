@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import AppShell, { PageHeader } from "@/components/AppShell";
+import { api, type PublicSocialLink } from "@/lib/api";
 
 export const Route = createFileRoute("/advertise")({
   head: () => ({
@@ -24,6 +26,8 @@ const SPOTS = [
 ];
 
 function Advertise() {
+  const [telegram, setTelegram] = useState<PublicSocialLink | null>(null);
+  useEffect(() => { api.socialLinks().then(({ links }) => setTelegram(links.find((link) => link.label.toLowerCase() === "telegram") ?? null)).catch(() => {}); }, []);
   return (
     <AppShell>
       <PageHeader title="Advertise" subtitle="Partner with WallRush" />
@@ -53,14 +57,12 @@ function Advertise() {
           <p className="mt-1 text-sm text-muted-foreground">
             Tell us your product, budget and dates — we reply within a day.
           </p>
-          <a
-            href="https://t.me/wall_rush1"
+          {telegram && <a
+            href={telegram.url}
             target="_blank"
             rel="noreferrer"
             className="mt-3 block rounded-xl bg-primary px-4 py-3 text-center text-sm font-extrabold text-primary-foreground"
-          >
-            Contact on Telegram
-          </a>
+          >Contact on Telegram</a>}
         </div>
       </div>
     </AppShell>

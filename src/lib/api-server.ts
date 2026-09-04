@@ -42,6 +42,9 @@ async function ensureSchema() {
     await sql`CREATE INDEX IF NOT EXISTS rooms_waiting_public_idx ON rooms (is_public, status, created_at DESC)`;
     await sql`CREATE TABLE IF NOT EXISTS matches (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE, opponent_type text NOT NULL, opponent_name text, result text NOT NULL, points integer NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now())`;
     await sql`CREATE TABLE IF NOT EXISTS reviews (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE, username text NOT NULL, rating integer NOT NULL CHECK (rating BETWEEN 1 AND 5), comment text, likes integer NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now())`;
+    await sql`CREATE TABLE IF NOT EXISTS social_links (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), label text NOT NULL UNIQUE, url text NOT NULL, icon text NOT NULL DEFAULT '🔗', enabled boolean NOT NULL DEFAULT true, position integer NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
+    await sql`CREATE INDEX IF NOT EXISTS social_links_enabled_position_idx ON social_links (enabled, position, label)`;
+    await sql`INSERT INTO social_links (label,url,icon,position) VALUES ('Instagram','https://www.instagram.com/wall_rush_','📸',0),('TikTok','https://www.tiktok.com/@wall_rush_','🎵',1),('Telegram','https://t.me/wall_rush1','✈️',2),('YouTube','https://www.youtube.com/@wall_rush','▶️',3) ON CONFLICT (label) DO NOTHING`;
   })();
   return schemaPromise;
 }
@@ -126,6 +129,10 @@ export async function handleApi(request: Request): Promise<Response | null> {
     if (path === "/api/health" && request.method === "GET") {
       await sql`SELECT 1`;
       return response({ ok: true, database: "neon", schema: "ready" }, 200, { "cache-control": "no-store" });
+    }
+    if (path === "/api/social-links" && request.method === "GET") {
+      const rows = await sql`SELECT id,label,url,icon,position FROM social_links WHERE enabled=true ORDER BY position ASC,label ASC`;
+      return response({ links: rows }, 200, { "cache-control": "no-store" });
     }
     if (path === "/api/auth/signup" && request.method === "POST") {
       const input = await body(request); const userEmail = email(input?.email); const password = typeof input?.password === "string" ? input.password : ""; const username = text(input?.username, 18) ?? `User${Math.floor(1000 + Math.random() * 9000)}`;

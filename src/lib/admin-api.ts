@@ -2,6 +2,7 @@ export type AdminRole = "admin" | "super_admin";
 export interface AdminIdentity { id: string; username: string; role: AdminRole }
 export interface AdminAccount { id: string; username: string; role: AdminRole; created_at: string }
 export interface AdminUser { id: string; email: string; username: string; points: number; games: number; wins: number; losses: number; streak: number; disabled: boolean; created_at: string; last_active_at: string | null; rank?: number; match_count?: number }
+export interface SocialLink { id: string; label: string; url: string; icon: string; enabled: boolean; position: number; created_at: string; updated_at: string }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers); if (init.body) headers.set("Content-Type", "application/json");
@@ -28,4 +29,8 @@ export const adminApi = {
   rooms: () => request<{ rooms: any[] }>("/api/admin/rooms"),
   analytics: () => request<{ growth: any[]; visits: any[]; dailyMatches: any[]; split: any[] }>("/api/admin/analytics"),
   activity: () => request<{ activity: any[] }>("/api/admin/activity"),
+  socialLinks: () => request<{ links: SocialLink[] }>("/api/admin/social-links"),
+  createSocialLink: (data: Pick<SocialLink, "label" | "url" | "icon" | "enabled" | "position">) => request<{ link: SocialLink }>("/api/admin/social-links", { method: "POST", body: JSON.stringify(data) }),
+  updateSocialLink: (id: string, data: Partial<Pick<SocialLink, "label" | "url" | "icon" | "enabled" | "position">>) => request<{ link: SocialLink }>(`/api/admin/social-links/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteSocialLink: (id: string) => request<{ ok: true }>(`/api/admin/social-links/${id}`, { method: "DELETE" }),
 };

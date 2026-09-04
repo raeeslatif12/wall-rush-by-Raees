@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import AppShell, { PageHeader } from "@/components/AppShell";
+import { api, type PublicSocialLink } from "@/lib/api";
 
 export const Route = createFileRoute("/support")({
   head: () => ({
@@ -41,6 +43,8 @@ const WAYS = [
 ];
 
 function Support() {
+  const [telegram, setTelegram] = useState<PublicSocialLink | null>(null);
+  useEffect(() => { api.socialLinks().then(({ links }) => setTelegram(links.find((link) => link.label.toLowerCase() === "telegram") ?? null)).catch(() => {}); }, []);
   return (
     <AppShell>
       <PageHeader title="Support" subtitle="Keep WallRush free" />
@@ -65,14 +69,12 @@ function Support() {
           </div>
         ))}
 
-        <a
-          href="https://t.me/wall_rush1"
+        {telegram && <a
+          href={telegram.url}
           target="_blank"
           rel="noreferrer"
           className="block rounded-2xl bg-primary px-4 py-3.5 text-center text-sm font-extrabold text-primary-foreground shadow-[var(--shadow-raised)]"
-        >
-          Message us on Telegram
-        </a>
+        >Message us on Telegram</a>}
       </div>
     </AppShell>
   );

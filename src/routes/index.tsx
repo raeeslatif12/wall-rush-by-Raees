@@ -3,6 +3,7 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import AppShell from "@/components/AppShell";
 import { useApp } from "@/hooks/useAppState";
 import { createRoom, joinRoom, onlineCount, quickMatch } from "@/lib/rooms";
+import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -30,6 +31,7 @@ function Home() {
   const [busy, setBusy] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [socialLinks, setSocialLinks] = useState<Array<{ id: string; label: string; url: string; icon: string }>>([]);
 
   useEffect(() => {
     let alive = true;
@@ -40,6 +42,10 @@ function Home() {
       alive = false;
       clearInterval(t);
     };
+  }, []);
+
+  useEffect(() => {
+    api.socialLinks().then(({ links }) => setSocialLinks(links)).catch(() => {});
   }, []);
 
   async function go(kind: "quick" | "create-public" | "create-private") {
@@ -204,19 +210,13 @@ function Home() {
           </Link>
         </div>
 
-        <p className="mt-8 text-center text-xs font-bold uppercase tracking-[0.25em] text-muted-foreground">
-          Follow us
-        </p>
-        <div className="mt-3 flex justify-center gap-3">
-          {[
-            { href: "https://www.instagram.com/wall_rush_", label: "Instagram", icon: "📸" },
-            { href: "https://www.tiktok.com/@wall_rush_", label: "TikTok", icon: "🎵" },
-            { href: "https://t.me/wall_rush1", label: "Telegram", icon: "✈️" },
-            { href: "https://www.youtube.com/@wall_rush", label: "YouTube", icon: "▶️" },
-          ].map((s) => (
+        {socialLinks.length > 0 && <>
+          <p className="mt-8 text-center text-xs font-bold uppercase tracking-[0.25em] text-muted-foreground">Follow us</p>
+          <div className="mt-3 flex justify-center gap-3">
+          {socialLinks.map((s) => (
             <a
-              key={s.label}
-              href={s.href}
+              key={s.id}
+              href={s.url}
               target="_blank"
               rel="noreferrer"
               aria-label={s.label}
@@ -225,7 +225,8 @@ function Home() {
               {s.icon}
             </a>
           ))}
-        </div>
+          </div>
+        </>}
 
         <div className="mt-4 flex justify-center gap-3 text-xs font-semibold text-muted-foreground">
           <Link to="/rules">Rules</Link>
