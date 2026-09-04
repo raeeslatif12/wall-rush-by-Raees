@@ -5,17 +5,14 @@ import { useApp } from "@/hooks/useAppState";
 import { api } from "@/lib/api";
 import { beep, vibrate } from "@/lib/local";
 import { chooseAction } from "@/lib/ai";
-import { applyMove, applyWall, type Pos, type Wall } from "@/lib/quoridor";
+import { type Pos, type Wall } from "@/lib/quoridor";
 import {
-  START_SECONDS,
   fetchRoom,
-  freshRoomState,
   joinRoom,
   leaveRoom,
-  saveRoomState,
+  saveRoomAction,
   seatOf,
   type Room,
-  type RoomState,
 } from "@/lib/rooms";
 
 export const Route = createFileRoute("/room/$code")({
@@ -43,18 +40,21 @@ function RoomPage() {
   const [room, setRoom] = useState<Room | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const recorded = useRef(false);
+  const roomRef = useRef<Room | null>(null);
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         const joined = await joinRoom(code.toUpperCase(), app.local.token, app.displayName);
-        if (alive) setRoom(joined);
+        if (alive) { roomRef.current = joined; setRoom(joined); }
       } catch {
         const existing = await fetchRoom(code);
         if (!alive) return;
-        if (existing) setRoom(existing);
+        if (existing) { roomRef.current = existing; setRoom(existing); }
         else setError("This room no longer exists.");
       }
     })();
@@ -66,7 +66,10 @@ function RoomPage() {
   useEffect(() => {
     let alive = true;
     const poll = () => fetchRoom(code).then((current) => {
-      if (alive && current) setRoom(current);
+      if (alive && current && current.updated_at !== roomRef.current?.updated_at && current.state.game.moveCount >= (roomRef.current?.state.game.moveCount ?? 0)) {
+        roomRef.current = current;
+        setRoom(current);
+      }
     }).catch(() => {});
     const timer = window.setInterval(poll, 2000);
     return () => {
@@ -78,7 +81,7 @@ function RoomPage() {
   useEffect(() => {
     if (!room || room.p2_token || !room.is_public || room.status !== "waiting") return;
     const timer = window.setTimeout(() => {
-      void api.startBot(room.code, app.local.token).then(({ room: started }) => setRoom(started)).catch(() => {});
+      void api.startBot(room.code, app.local.token).then(({ room: started }) => { roomRef.current = started; setRoom(started); }).catch(() => {});
     }, 7000);
     return () => window.clearTimeout(timer);
   }, [room?.code, room?.p2_token, room?.is_public, room?.status, app.local.token]);
@@ -90,8 +93,9 @@ function RoomPage() {
     if (!room || !state || seat !== 0 || !room.is_bot || state.turn !== 1 || state.winner !== null) return;
     const timer = window.setTimeout(() => {
       const action = chooseAction(state, 1, "hardcore");
-      const next = action.type === "move" ? applyMove(state, action.to) : applyWall(state, action.wall);
-      void saveRoomState(room.code, app.local.token, { ...room.state, game: next }, next.winner === null ? {} : { status: "done", winner: next.winner });
+      const botToken = room.p2_token;
+      if (!botToken) return;
+      void saveRoomAction(room.code, botToken, action, state.moveCount).then((updated) => { roomRef.current = updated; setRoom(updated); }).catch(() => {});
     }, 500);
     return () => window.clearTimeout(timer);
   }, [room, state, seat, app.local.token]);
@@ -109,27 +113,26 @@ function RoomPage() {
     });
   }, [room, seat, app]);
 
-  const push = useCallback(
-    async (next: RoomState, extra: { status?: string; winner?: number | null } = {}) => {
-      if (!room) return;
-      setRoom({ ...room, state: next, ...extra } as Room);
+  const pushAction = useCallback(
+    async (action: Parameters<typeof saveRoomAction>[2]) => {
+      const current = roomRef.current;
+      if (!current || submittingRef.current) return;
+      submittingRef.current = true;
+      setSubmitting(true);
       try {
-        await saveRoomState(room.code, app.local.token, next, extra);
+        const updated = await saveRoomAction(current.code, app.local.token, action, current.state.game.moveCount);
+        roomRef.current = updated;
+        setRoom(updated);
       } catch {
-        setError("Could not sync that move. Check your connection.");
+        const synced = await fetchRoom(current.code).catch(() => null);
+        if (synced) { roomRef.current = synced; setRoom(synced); }
+        else setError("Could not sync that move. Check your connection.");
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
       }
     },
-    [room],
-  );
-
-  const advanceClock = useCallback(
-    (prev: RoomState, mover: 0 | 1): RoomState["clocks"] => {
-      const elapsed = (Date.now() - prev.clocks.lastMoveAt) / 1000;
-      const base: [number, number] = [...prev.clocks.base] as [number, number];
-      base[mover] = Math.max(0, base[mover] - elapsed);
-      return { base, lastMoveAt: Date.now() };
-    },
-    [],
+    [app.local.token],
   );
 
   if (error) {
@@ -201,35 +204,28 @@ function RoomPage() {
     resignedBy === null ? null : resignedBy === seat ? "You resigned" : "Opponent resigned — you win!";
 
   function onMove(p: Pos) {
-    const next = applyMove(state!, p);
     vibrate(app.settings.vibration);
     beep(app.settings.sound);
-    void push(
-      { ...room!.state, game: next, clocks: advanceClock(room!.state, seat as 0 | 1) },
-      next.winner === null ? {} : { status: "done", winner: next.winner },
-    );
+    void pushAction({ type: "move", to: p });
   }
 
   function onWall(w: Wall) {
-    const next = applyWall(state!, w);
     vibrate(app.settings.vibration);
     beep(app.settings.sound, 420);
-    void push({ ...room!.state, game: next, clocks: advanceClock(room!.state, seat as 0 | 1) });
+    void pushAction({ type: "wall", wall: w });
   }
 
   function onResign() {
-    void push({ ...room!.state, resignedBy: seat as 0 | 1 }, { status: "done", winner: seat === 0 ? 1 : 0 });
+    void pushAction({ type: "resign" });
   }
 
   function onEmote(emoji: string) {
-    void push({ ...room!.state, emote: { seat: seat as 0 | 1, emoji, at: Date.now() } });
+    void pushAction({ type: "emote", emoji });
   }
 
   function onRematch() {
     recorded.current = false;
-    const fresh = freshRoomState();
-    fresh.clocks = { base: [START_SECONDS, START_SECONDS], lastMoveAt: Date.now() };
-    void push(fresh, { status: "playing", winner: null });
+    void pushAction({ type: "rematch" });
   }
 
   return (
@@ -239,7 +235,7 @@ function RoomPage() {
       mySeat={seat}
       myName={app.displayName}
       oppName={oppName}
-      interactive={resignedBy === null}
+      interactive={resignedBy === null && state.turn === seat && state.winner === null && !submitting}
       clocks={{ ...room.state.clocks, running: state.winner === null && resignedBy === null }}
       emote={room.state.emote ?? null}
       onMove={onMove}

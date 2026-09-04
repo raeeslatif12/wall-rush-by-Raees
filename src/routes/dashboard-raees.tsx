@@ -1,21 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Activity, BarChart3, Bot, ChevronRight, CircleUserRound, DoorOpen, Gauge, LogOut, RefreshCw, Search, ShieldCheck, Swords, Trophy, Users, UserRoundCog, X } from "lucide-react";
+import { Activity, BarChart3, Bot, ChevronRight, CircleUserRound, DoorOpen, Gauge, KeyRound, LogOut, Plus, RefreshCw, Search, ShieldCheck, Swords, Trash2, Trophy, Users, UserRoundCog, X } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { adminApi, type AdminUser } from "@/lib/admin-api";
+import { adminApi, type AdminAccount, type AdminIdentity, type AdminUser } from "@/lib/admin-api";
 
 export const Route = createFileRoute("/dashboard-raees")({ component: AdminDashboard });
 
-type Tab = "overview" | "users" | "matches" | "rooms" | "rankings" | "analytics" | "activity";
+type Tab = "overview" | "users" | "matches" | "rooms" | "rankings" | "analytics" | "activity" | "admins";
 const tabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: "overview", label: "Overview", icon: Gauge }, { id: "users", label: "Users", icon: Users }, { id: "matches", label: "Matches", icon: Swords },
-  { id: "rooms", label: "Live rooms", icon: DoorOpen }, { id: "rankings", label: "Rankings", icon: Trophy }, { id: "analytics", label: "Analytics", icon: BarChart3 }, { id: "activity", label: "Audit log", icon: Activity },
+  { id: "rooms", label: "Live rooms", icon: DoorOpen }, { id: "rankings", label: "Rankings", icon: Trophy }, { id: "analytics", label: "Analytics", icon: BarChart3 }, { id: "activity", label: "Audit log", icon: Activity }, { id: "admins", label: "Administrators", icon: UserRoundCog },
 ];
 const number = new Intl.NumberFormat("en-US");
 const date = (value: string | null | undefined) => value ? new Date(value).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "Never";
 
 function AdminDashboard() {
-  const [admin, setAdmin] = useState<{ username: string } | null>(null);
+  const [admin, setAdmin] = useState<AdminIdentity | null>(null);
   const [checking, setChecking] = useState(true);
   const [tab, setTab] = useState<Tab>("overview");
   const [loginError, setLoginError] = useState("");
@@ -26,7 +26,7 @@ function AdminDashboard() {
     setRefreshing(true);
     try { const [overview, users, matches, rooms, analytics, activity] = await Promise.all([adminApi.overview(), adminApi.users(), adminApi.matches(), adminApi.rooms(), adminApi.analytics(), adminApi.activity()]); setData({ ...overview, ...users, ...matches, ...rooms, ...analytics, ...activity }); } catch (error) { if (error instanceof Error && error.message.includes("authentication")) setAdmin(null); } finally { setRefreshing(false); }
   }
-  useEffect(() => { adminApi.session().then((result) => { setAdmin(result.admin); }).catch(() => {}).finally(() => setChecking(false)); }, []);
+  useEffect(() => { adminApi.session().then((result) => { setAdmin(result.admin); }).catch((caught) => { if (caught instanceof Error && !caught.message.includes("authentication")) setLoginError(caught.message); }).finally(() => setChecking(false)); }, []);
   useEffect(() => { if (admin) void load(); }, [admin]);
   if (checking) return <div className="admin-loading">Checking secure admin session...</div>;
   if (!admin) return <AdminLogin onLogin={setAdmin} error={loginError} setError={setLoginError} />;
@@ -35,8 +35,8 @@ function AdminDashboard() {
     <aside className="admin-sidebar">
       <div className="admin-brand"><span className="admin-brand-mark"><ShieldCheck size={22} /></span><span><strong>WallRush</strong><small>Control center</small></span></div>
       <div className="admin-secure"><span className="admin-live-dot" /> Private admin mode</div>
-      <nav className="admin-nav">{tabs.map(({ id, label, icon: Icon }) => <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}><Icon size={17} />{label}{id === "rooms" && stats["activeRooms"] ? <b>{stats["activeRooms"]}</b> : null}</button>)}</nav>
-      <div className="admin-sidebar-foot"><div className="admin-identity"><CircleUserRound size={30} /><span><strong>{admin.username}</strong><small>Administrator</small></span></div><button className="admin-logout" onClick={() => { void adminApi.logout().finally(() => setAdmin(null)); }}><LogOut size={16} /> Sign out</button></div>
+      <nav className="admin-nav">{tabs.filter(({ id }) => id !== "admins" || admin.role === "super_admin").map(({ id, label, icon: Icon }) => <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}><Icon size={17} />{label}{id === "rooms" && stats["activeRooms"] ? <b>{stats["activeRooms"]}</b> : null}</button>)}</nav>
+      <div className="admin-sidebar-foot"><div className="admin-identity"><CircleUserRound size={30} /><span><strong>{admin.username}</strong><small>{admin.role === "super_admin" ? "Super administrator" : "Administrator"}</small></span></div><button className="admin-logout" onClick={() => { void adminApi.logout().finally(() => setAdmin(null)); }}><LogOut size={16} /> Sign out</button></div>
     </aside>
     <main className="admin-main">
       <header className="admin-topbar"><div><p className="admin-eyebrow">WallRush / Administration</p><h1>{tabs.find((item) => item.id === tab)?.label}</h1></div><button className="admin-refresh" onClick={() => void load()} disabled={refreshing}><RefreshCw size={16} className={refreshing ? "spin" : ""} /> {refreshing ? "Refreshing" : "Refresh data"}</button></header>
@@ -47,14 +47,26 @@ function AdminDashboard() {
       {tab === "rankings" && <RankingsPanel users={data.users} />}
       {tab === "analytics" && <AnalyticsPanel data={data} />}
       {tab === "activity" && <ActivityPanel activity={data.activity} />}
+      {tab === "admins" && <AdminsPanel admin={admin} onAdminChange={setAdmin} />}
     </main>
   </div>;
 }
 
-function AdminLogin({ onLogin, error, setError }: { onLogin: (admin: { username: string }) => void; error: string; setError: (value: string) => void }) {
+function AdminLogin({ onLogin, error, setError }: { onLogin: (admin: AdminIdentity) => void; error: string; setError: (value: string) => void }) {
   const [username, setUsername] = useState(""); const [password, setPassword] = useState(""); const [busy, setBusy] = useState(false);
   async function submit(event: React.FormEvent) { event.preventDefault(); setBusy(true); setError(""); try { const result = await adminApi.login(username, password); onLogin(result.admin); } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to sign in"); } finally { setBusy(false); } }
   return <div className="admin-login-page"><div className="admin-login-glow" /><form className="admin-login-card" onSubmit={submit}><div className="admin-login-icon"><ShieldCheck size={30} /></div><p className="admin-eyebrow">Restricted access</p><h1>Admin command center</h1><p className="admin-login-copy">Sign in with your private administrator credentials to continue.</p><label>Username<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></label><label>Password<input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" required /></label>{error && <p className="admin-error">{error}</p>}<button className="admin-primary" disabled={busy}>{busy ? "Authenticating..." : "Enter dashboard"}<ChevronRight size={17} /></button><small className="admin-login-note">Protected by server-side session authorization</small></form></div>;
+}
+
+function AdminsPanel({ admin, onAdminChange }: { admin: AdminIdentity; onAdminChange: (admin: AdminIdentity) => void }) {
+  const [profileName, setProfileName] = useState(admin.username); const [profilePassword, setProfilePassword] = useState(""); const [newName, setNewName] = useState(""); const [newPassword, setNewPassword] = useState(""); const [admins, setAdmins] = useState<AdminAccount[]>([]); const [showCreate, setShowCreate] = useState(false); const [passwordAdmin, setPasswordAdmin] = useState<AdminAccount | null>(null); const [message, setMessage] = useState(""); const [error, setError] = useState(""); const [saving, setSaving] = useState(false);
+  useEffect(() => { adminApi.admins().then((result) => setAdmins(result.admins)).catch((caught) => setError(caught instanceof Error ? caught.message : "Could not load administrators.")); }, []);
+  function clearNotice() { setMessage(""); setError(""); }
+  async function saveProfile(event: React.FormEvent) { event.preventDefault(); clearNotice(); setSaving(true); try { const result = await adminApi.updateProfile(profileName, profilePassword); onAdminChange(result.admin); setProfilePassword(""); setMessage("Your administrator profile was updated."); } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not update your profile."); } finally { setSaving(false); } }
+  async function createAdmin(event: React.FormEvent) { event.preventDefault(); clearNotice(); setSaving(true); try { const result = await adminApi.createAdmin(newName, newPassword); setAdmins((current) => [...current, result.admin]); setNewName(""); setNewPassword(""); setShowCreate(false); setMessage("The new administrator account was created."); } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not create the administrator."); } finally { setSaving(false); } }
+  async function deleteAdmin(account: AdminAccount) { clearNotice(); if (!window.confirm(`Delete administrator ${account.username}?`)) return; setSaving(true); try { await adminApi.deleteAdmin(account.id); setAdmins((current) => current.filter((item) => item.id !== account.id)); setMessage(`${account.username} was removed.`); } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not delete the administrator."); } finally { setSaving(false); } }
+  async function updatePassword(event: React.FormEvent) { event.preventDefault(); if (!passwordAdmin) return; clearNotice(); setSaving(true); try { await adminApi.updateAdminPassword(passwordAdmin.id, newPassword); setNewPassword(""); setPasswordAdmin(null); setMessage(`${passwordAdmin.username}'s password was updated.`); } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not update the password."); } finally { setSaving(false); } }
+  return <div className="admin-admin-grid"><section className="admin-section"><div className="admin-section-head"><div><p className="admin-eyebrow">Your access</p><h2>Edit your profile</h2></div><CircleUserRound size={24} /></div><form onSubmit={saveProfile} className="admin-form-grid"><label className="wide">Username<input value={profileName} onChange={(event) => setProfileName(event.target.value)} autoComplete="username" required /></label><label className="wide">New password<input type="password" value={profilePassword} onChange={(event) => setProfilePassword(event.target.value)} placeholder="Leave blank to keep current" autoComplete="new-password" /></label><div className="admin-drawer-actions wide"><button className="admin-primary" disabled={saving}>{saving ? "Saving..." : "Save profile"}</button></div></form></section><section className="admin-section admin-admin-list"><div className="admin-section-head"><div><p className="admin-eyebrow">Access control</p><h2>Manage administrators</h2></div><button className="admin-primary" onClick={() => { clearNotice(); setShowCreate(true); }}><Plus size={16} /> New admin</button></div><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Username</th><th>Role</th><th>Added</th><th /></tr></thead><tbody>{admins.map((account) => <tr key={account.id}><td><strong>{account.username}</strong>{account.id === admin.id && <span className="admin-badge blue">You</span>}</td><td><span className={`admin-badge ${account.role === "super_admin" ? "purple" : "blue"}`}>{account.role === "super_admin" ? "Super admin" : "Admin"}</span></td><td>{date(account.created_at)}</td><td><button className="admin-icon-button" title={`Change ${account.username} password`} onClick={() => { clearNotice(); setNewPassword(""); setPasswordAdmin(account); }} disabled={saving}><KeyRound size={16} /></button>{account.id !== admin.id && <button className="admin-icon-button" title={`Delete ${account.username}`} onClick={() => void deleteAdmin(account)} disabled={saving}><Trash2 size={16} /></button>}</td></tr>)}</tbody></table></div></section>{(message || error) && <p className={error ? "admin-error" : "admin-success"}>{error || message}</p>}{showCreate && <div className="admin-modal-backdrop" onClick={() => setShowCreate(false)}><section className="admin-modal" onClick={(event) => event.stopPropagation()}><div className="admin-drawer-head"><div><p className="admin-eyebrow">Access control</p><h2>Create administrator</h2></div><button className="admin-icon-button" onClick={() => setShowCreate(false)}><X size={18} /></button></div><form onSubmit={createAdmin} className="admin-form-grid"><label className="wide">Username<input value={newName} onChange={(event) => setNewName(event.target.value)} autoComplete="off" required /></label><label className="wide">Password<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={8} autoComplete="new-password" required /></label><div className="admin-drawer-actions wide"><button type="button" className="admin-secondary" onClick={() => setShowCreate(false)}>Cancel</button><button className="admin-primary" disabled={saving}>{saving ? "Creating..." : "Create administrator"}</button></div></form></section></div>}{passwordAdmin && <div className="admin-modal-backdrop" onClick={() => setPasswordAdmin(null)}><section className="admin-modal" onClick={(event) => event.stopPropagation()}><div className="admin-drawer-head"><div><p className="admin-eyebrow">Access control</p><h2>Change password</h2></div><button className="admin-icon-button" onClick={() => setPasswordAdmin(null)}><X size={18} /></button></div><form onSubmit={updatePassword} className="admin-form-grid"><p className="admin-modal-copy wide">Set a new password for {passwordAdmin.username}.</p><label className="wide">New password<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={8} autoComplete="new-password" required /></label><div className="admin-drawer-actions wide"><button type="button" className="admin-secondary" onClick={() => setPasswordAdmin(null)}>Cancel</button><button className="admin-primary" disabled={saving}>{saving ? "Updating..." : "Update password"}</button></div></form></section></div>}</div>;
 }
 
 function Overview({ stats }: { stats: Record<string, number> }) {

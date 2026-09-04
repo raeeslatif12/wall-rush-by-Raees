@@ -55,8 +55,13 @@ export default {
       const apiResponse = await handleApi(request);
       if (apiResponse) return apiResponse;
       const handler = await getServerEntry();
-      const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      const response = await normalizeCatastrophicSsrResponse(await handler.fetch(request, env, ctx));
+      if (new URL(request.url).pathname === "/dashboard-raees") {
+        const headers = new Headers(response.headers);
+        headers.set("Cache-Control", "no-store, max-age=0");
+        return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+      }
+      return response;
     } catch (error) {
       console.error(error);
       return new Response(renderErrorPage(), {

@@ -16,6 +16,16 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_idx ON users (lower(email));
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_idx ON users (lower(username));
 
+CREATE TABLE IF NOT EXISTS admins (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  username text NOT NULL UNIQUE,
+  password_hash text NOT NULL,
+  role text NOT NULL DEFAULT 'admin' CHECK (role IN ('admin', 'super_admin')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS admins_username_lower_idx ON admins (lower(username));
+
 CREATE TABLE IF NOT EXISTS rooms (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   code text NOT NULL UNIQUE,

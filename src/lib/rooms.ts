@@ -82,6 +82,15 @@ export async function saveRoomState(
   await api.saveRoom(code, token, state, extra);
 }
 
+export async function saveRoomAction(
+  code: string,
+  token: string,
+  action: Parameters<typeof api.roomAction>[2],
+  expectedMoveCount: number,
+): Promise<Room> {
+  return (await api.roomAction(code, token, action, expectedMoveCount)).room;
+}
+
 export async function leaveRoom(code: string, token: string) {
   await api.leaveRoom(code, token);
 }

@@ -2,6 +2,7 @@ import { neon } from "@neondatabase/serverless";
 import { compare, hash } from "bcryptjs";
 import { jwtVerify, SignJWT } from "jose";
 import type { RoomState } from "./rooms";
+import { applyMove, applyWall, type Pos, type Wall } from "./quoridor";
 
 const databaseUrl = process.env["DATABASE_URL"];
 const jwtSecret = process.env["JWT_SECRET"];
@@ -31,7 +32,6 @@ async function issueSession(user: User) { return new SignJWT({ email: user.email
 async function ensureSchema() {
   if (!sql) throw new Error("DATABASE_URL is not configured");
   schemaPromise ??= (async () => {
-    await sql`CREATE EXTENSION IF NOT EXISTS pgcrypto`;
     await sql`CREATE TABLE IF NOT EXISTS users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), email text NOT NULL UNIQUE, password_hash text NOT NULL, username text NOT NULL UNIQUE, points integer NOT NULL DEFAULT 0, games integer NOT NULL DEFAULT 0, wins integer NOT NULL DEFAULT 0, losses integer NOT NULL DEFAULT 0, streak integer NOT NULL DEFAULT 0, last_played date, created_at timestamptz NOT NULL DEFAULT now())`;
     await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled boolean NOT NULL DEFAULT false`;
     await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at timestamptz`;
@@ -47,6 +47,12 @@ async function ensureSchema() {
 }
 function makeCode() { const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; return Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join(""); }
 function room(row: Record<string, unknown>): Room { return row as unknown as Room; }
+function advanceRoomClock(state: RoomState, mover: 0 | 1): RoomState["clocks"] {
+  const elapsed = (Date.now() - state.clocks.lastMoveAt) / 1000;
+  const base: [number, number] = [...state.clocks.base] as [number, number];
+  base[mover] = Math.max(0, base[mover] - elapsed);
+  return { base, lastMoveAt: Date.now() };
+}
 
 export async function handleApi(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
@@ -55,6 +61,72 @@ export async function handleApi(request: Request): Promise<Response | null> {
     await ensureSchema();
     if (!sql) return error("Backend is not configured", 503);
     const path = url.pathname;
+    const legacyRoomMatch = path.match(/^\/api\/rooms\/([A-Z0-9]+)$/);
+    if (legacyRoomMatch && request.method === "PATCH") {
+      const input: any = await body(request);
+      if (input?.action === "join") {
+        const token = text(input.token, 100);
+        const name = text(input.name, 80);
+        if (!token || !name) return error("Player identity is required.");
+        const rows = await sql`SELECT * FROM rooms WHERE code=${legacyRoomMatch[1]} LIMIT 1`;
+        const current: any = rows[0];
+        if (!current) return error("Room not found.", 404);
+        if (current.p1_token === token || current.p2_token) return response({ room: room(current) });
+        const updated = await sql`UPDATE rooms SET p2_token=${token},p2_name=${name},is_bot=false,status='playing',updated_at=now() WHERE code=${legacyRoomMatch[1]} AND p2_token IS NULL RETURNING *`;
+        return updated[0] ? response({ room: room(updated[0]) }) : error("That room is already full.", 409);
+      }
+      return error("Room state must be changed with a validated room action.", 400);
+    }
+    const actionMatch = path.match(/^\/api\/rooms\/([A-Z0-9]+)\/action$/);
+    if (actionMatch && request.method === "PATCH") {
+      const input: any = await body(request);
+      const token = text(input?.token, 100);
+      const expectedMoveCount = input?.expectedMoveCount;
+      const action = input?.action;
+      if (!token || !Number.isInteger(expectedMoveCount) || !action?.type) return error("Invalid room action.");
+      const rows = await sql`SELECT * FROM rooms WHERE code=${actionMatch[1]} LIMIT 1`;
+      const current: any = rows[0];
+      if (!current) return error("Room not found.", 404);
+      const seat = current.p1_token === token ? 0 : current.p2_token === token ? 1 : null;
+      if (seat === null) return error("You are not in this room.", 403);
+      const currentState = current.state as RoomState;
+      if (currentState.game.moveCount !== expectedMoveCount) return error("That game state is out of date.", 409);
+      const game = currentState.game;
+      let nextState: RoomState = currentState;
+      let nextStatus = current.status;
+      let nextWinner = current.winner;
+      let requiresTurn = true;
+      if (action.type === "move" && action.to && Number.isInteger(action.to.r) && Number.isInteger(action.to.c)) {
+        const nextGame = applyMove(game, action.to as Pos);
+        if (nextGame.moveCount === game.moveCount) return error("That move is not legal.", 409);
+        nextState = { ...currentState, game: nextGame, clocks: advanceRoomClock(currentState, seat) };
+        if (nextGame.winner !== null) { nextStatus = "done"; nextWinner = nextGame.winner; }
+      } else if (action.type === "wall" && action.wall && (action.wall.o === "h" || action.wall.o === "v") && Number.isInteger(action.wall.r) && Number.isInteger(action.wall.c)) {
+        const nextGame = applyWall(game, action.wall as Wall);
+        if (nextGame.moveCount === game.moveCount) return error("That wall is not legal.", 409);
+        nextState = { ...currentState, game: nextGame, clocks: advanceRoomClock(currentState, seat) };
+      } else if (action.type === "resign") {
+        nextState = { ...currentState, resignedBy: seat };
+        nextStatus = "done";
+        nextWinner = seat === 0 ? 1 : 0;
+      } else if (action.type === "emote" && typeof action.emoji === "string" && action.emoji.length <= 8) {
+        requiresTurn = false;
+        nextState = { ...currentState, emote: { seat, emoji: action.emoji, at: Date.now() } };
+      } else if (action.type === "rematch") {
+        nextState = { ...currentState, game: { pawns: [{ r: 8, c: 4 }, { r: 0, c: 4 }], walls: [], wallsLeft: [10, 10], turn: 0, winner: null, moveCount: 0, history: [] }, clocks: { base: [300, 300], lastMoveAt: Date.now() }, resignedBy: null, rematch: [false, false] };
+        nextStatus = "playing";
+        nextWinner = null;
+      } else return error("Invalid room action.");
+      const updated = requiresTurn
+        ? await sql`UPDATE rooms SET state=${JSON.stringify(nextState)}::jsonb,status=${nextStatus},winner=${nextWinner},updated_at=now() WHERE code=${actionMatch[1]} AND state->'game'->>'moveCount'=${String(expectedMoveCount)} AND ((p1_token=${token} AND state->'game'->>'turn'='0') OR (p2_token=${token} AND state->'game'->>'turn'='1')) RETURNING *`
+        : await sql`UPDATE rooms SET state=${JSON.stringify(nextState)}::jsonb,status=${nextStatus},winner=${nextWinner},updated_at=now() WHERE code=${actionMatch[1]} AND state->'game'->>'moveCount'=${String(expectedMoveCount)} AND (p1_token=${token} OR p2_token=${token}) RETURNING *`;
+      if (!updated[0]) return error("That turn has already changed. Refreshing the game state.", 409);
+      return response({ room: room(updated[0]) });
+    }
+    if (path === "/api/health" && request.method === "GET") {
+      await sql`SELECT 1`;
+      return response({ ok: true, database: "neon", schema: "ready" }, 200, { "cache-control": "no-store" });
+    }
     if (path === "/api/auth/signup" && request.method === "POST") {
       const input = await body(request); const userEmail = email(input?.email); const password = typeof input?.password === "string" ? input.password : ""; const username = text(input?.username, 18) ?? `User${Math.floor(1000 + Math.random() * 9000)}`;
       if (!userEmail || password.length < 8) return error("Enter a valid email and a password of at least 8 characters.");
@@ -90,5 +162,5 @@ export async function handleApi(request: Request): Promise<Response | null> {
     if (path === "/api/rooms" && request.method === "POST") { const input = await body(request); const token = text(input?.token, 100); const name = text(input?.name, 80); if (!token || !name) return error("Player identity is required."); const isPublic = input?.isPublic === true; const code = makeCode(); const state = input?.state ?? { game: { pawns: [{ r: 8, c: 4 }, { r: 0, c: 4 }], walls: [], wallsLeft: [10, 10], turn: 0, winner: null, history: [], moveCount: 0 }, clocks: { base: [300, 300], lastMoveAt: Date.now() }, rematch: [false, false], resignedBy: null }; const rows = await sql`INSERT INTO rooms (code,is_public,status,p1_token,p1_name,state) VALUES (${code},${isPublic},'waiting',${token},${name},${JSON.stringify(state)}::jsonb) RETURNING *`; const created = rows[0]; return created ? response({ room: room(created) }, 201) : error("Could not create room.", 500); }
     const match = path.match(/^\/api\/rooms\/([A-Z0-9]+)$/); if (match) { const code = match[1]; if (request.method === "GET") { const rows = await sql`SELECT * FROM rooms WHERE code=${code} LIMIT 1`; return rows[0] ? response({ room: room(rows[0]) }) : error("Room not found.", 404); } if (request.method === "DELETE") { const input: any = await body(request); const token = text(input?.token, 100); if (!token) return error("Player identity is required."); const rows = await sql`SELECT * FROM rooms WHERE code=${code} LIMIT 1`; const current: any = rows[0]; if (!current) return error("Room not found.", 404); if (current["p1_token"] === token) { if (current["p2_token"] && !current["is_bot"]) await sql`UPDATE rooms SET p1_token=p2_token,p1_name=p2_name,p2_token=NULL,p2_name=NULL,is_bot=false,status='waiting',updated_at=now() WHERE code=${code}`; else await sql`DELETE FROM rooms WHERE code=${code}`; return response({ ok: true }); } if (current["p2_token"] === token) { await sql`UPDATE rooms SET p2_token=NULL,p2_name=NULL,is_bot=false,status='waiting',updated_at=now() WHERE code=${code}`; return response({ ok: true }); } return error("You are not in this room.", 403); } if (request.method === "PATCH") { const input: any = await body(request); const token = text(input?.token, 100); const name = text(input?.name, 80); const rows = await sql`SELECT * FROM rooms WHERE code=${code} LIMIT 1`; const current: any = rows[0]; if (!current) return error("Room not found.", 404); if (input?.action === "join") { if (current["p1_token"] === token || current["p2_token"]) return response({ room: room(current) }); const updated = await sql`UPDATE rooms SET p2_token=${token},p2_name=${name},is_bot=false,status='playing',updated_at=now() WHERE code=${code} AND p2_token IS NULL RETURNING *`; return updated[0] ? response({ room: room(updated[0]!) }) : error("That room is already full.", 409); } if (input?.state) { if (!token || (current["p1_token"] !== token && current["p2_token"] !== token)) return error("You are not in this room.", 403); const updated = await sql`UPDATE rooms SET state=${JSON.stringify(input.state)}::jsonb,status=${input.status ?? current["status"]},winner=${input.winner ?? current["winner"]},updated_at=now() WHERE code=${code} RETURNING *`; const saved = updated[0]; return saved ? response({ room: room(saved) }) : error("Could not save room.", 500); } return error("Invalid room action."); } }
     return error("API route not found.", 404);
-  } catch (caught) { console.error(caught); const duplicate = caught instanceof Error && caught.message.includes("duplicate key"); return error(duplicate ? "That email, username, or room code is already in use." : "Request could not be completed.", duplicate ? 409 : 500); }
+  } catch (caught) { const requestId = crypto.randomUUID(); console.error(`[api:${requestId}]`, caught); const duplicate = caught instanceof Error && caught.message.includes("duplicate key"); return new Response(JSON.stringify({ error: duplicate ? "That email, username, or room code is already in use." : "Request could not be completed.", requestId }), { status: duplicate ? 409 : 500, headers: { "content-type": "application/json", "cache-control": "no-store", "x-request-id": requestId } }); }
 }

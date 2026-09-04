@@ -1,3 +1,6 @@
+export type AdminRole = "admin" | "super_admin";
+export interface AdminIdentity { id: string; username: string; role: AdminRole }
+export interface AdminAccount { id: string; username: string; role: AdminRole; created_at: string }
 export interface AdminUser { id: string; email: string; username: string; points: number; games: number; wins: number; losses: number; streak: number; disabled: boolean; created_at: string; last_active_at: string | null; rank?: number; match_count?: number }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -7,8 +10,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const adminApi = {
-  session: () => request<{ admin: { username: string } }>("/api/admin/session"),
-  login: (username: string, password: string) => request<{ admin: { username: string } }>("/api/admin/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+  session: () => request<{ admin: AdminIdentity }>("/api/admin/session"),
+  login: (username: string, password: string) => request<{ admin: AdminIdentity }>("/api/admin/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+  admins: () => request<{ admins: AdminAccount[] }>("/api/admin/admins"),
+  createAdmin: (username: string, password: string) => request<{ admin: AdminAccount }>("/api/admin/admins", { method: "POST", body: JSON.stringify({ username, password }) }),
+  deleteAdmin: (id: string) => request<{ ok: true }>(`/api/admin/admins/${id}`, { method: "DELETE" }),
+  updateAdminPassword: (id: string, password: string) => request<{ ok: true }>(`/api/admin/admins/${id}`, { method: "PATCH", body: JSON.stringify({ password }) }),
+  updateProfile: (username: string, password: string) => request<{ admin: AdminIdentity }>("/api/admin/profile", { method: "PATCH", body: JSON.stringify({ username, ...(password ? { password } : {}) }) }),
   logout: () => request<{ ok: true }>("/api/admin/logout", { method: "POST" }),
   overview: () => request<{ stats: Record<string, number> }>("/api/admin/overview"),
   users: (search = "") => request<{ users: AdminUser[] }>(`/api/admin/users?search=${encodeURIComponent(search)}`),

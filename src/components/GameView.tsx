@@ -84,6 +84,7 @@ export default function GameView({
         <button
           type="button"
           onClick={onResign}
+          disabled={!myTurn}
           className="rounded-full bg-destructive/10 px-3 py-1.5 text-sm font-bold text-destructive"
         >
           ⚑ Resign
@@ -120,6 +121,7 @@ export default function GameView({
         <button
           type="button"
           onClick={() => setMode("move")}
+          disabled={!myTurn}
           className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-bold transition-colors ${mode === "move" ? "bg-primary text-primary-foreground" : "card-surface"}`}
         >
           Move
@@ -127,6 +129,7 @@ export default function GameView({
         <button
           type="button"
           onClick={() => setMode("wall")}
+          disabled={!myTurn}
           className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-bold transition-colors ${mode === "wall" ? "bg-primary text-primary-foreground" : "card-surface"}`}
         >
           🧱 Wall {state.wallsLeft[mySeat]}
@@ -134,6 +137,7 @@ export default function GameView({
         <button
           type="button"
           onClick={() => setOrient((o) => (o === "h" ? "v" : "h"))}
+          disabled={!myTurn}
           className="card-surface px-3 py-2.5 text-sm font-bold"
           aria-label="toggle wall orientation"
         >

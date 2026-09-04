@@ -38,6 +38,7 @@ export const api = {
   createRoom: (data: { isPublic: boolean; token: string; name: string; state: RoomState }) => request<{ room: Room }>("/api/rooms", { method: "POST", body: JSON.stringify(data) }),
   joinRoom: (code: string, token: string, name: string) => request<{ room: Room }>(`/api/rooms/${code.toUpperCase()}`, { method: "PATCH", body: JSON.stringify({ action: "join", token, name }) }),
   saveRoom: (code: string, token: string, state: RoomState, extra: { status?: string; winner?: number | null }) => request<{ room: Room }>(`/api/rooms/${code.toUpperCase()}`, { method: "PATCH", body: JSON.stringify({ token, state, ...extra }) }),
+  roomAction: (code: string, token: string, action: { type: "move"; to: { r: number; c: number } } | { type: "wall"; wall: { r: number; c: number; o: "h" | "v" } } | { type: "resign" } | { type: "emote"; emoji: string } | { type: "rematch" }, expectedMoveCount: number) => request<{ room: Room }>(`/api/rooms/${code.toUpperCase()}/action`, { method: "PATCH", body: JSON.stringify({ token, action, expectedMoveCount }) }),
   leaveRoom: (code: string, token: string) => request<{ ok: true }>(`/api/rooms/${code.toUpperCase()}`, { method: "DELETE", body: JSON.stringify({ token }) }),
   startBot: (code: string, token: string) => request<{ room: Room }>("/api/rooms/bot", { method: "POST", body: JSON.stringify({ code, token }) }),
 };
