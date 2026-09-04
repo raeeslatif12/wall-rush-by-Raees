@@ -1,0 +1,89 @@
+import { neon } from "@neondatabase/serverless";
+import { compare, hash } from "bcryptjs";
+import { createHash } from "node:crypto";
+import { jwtVerify, SignJWT } from "jose";
+
+const sql = process.env["DATABASE_URL"] ? neon(process.env["DATABASE_URL"]!) : null;
+const adminSecret = new TextEncoder().encode(process.env["ADMIN_JWT_SECRET"] ?? process.env["JWT_SECRET"] ?? "development-only-admin-secret");
+let adminSchemaPromise: Promise<void> | null = null;
+
+function json(body: unknown, status = 200, headers: Record<string, string> = {}) { return Response.json(body, { status, headers }); }
+function fail(message: string, status = 400) { return json({ error: message }, status); }
+function cookies(request: Request) { return Object.fromEntries((request.headers.get("cookie") ?? "").split(";").filter(Boolean).map((part) => { const [key, ...value] = part.trim().split("="); return [key, value.join("=")]; })); }
+function cookie(value: string, maxAge: number) { return `admin_session=${value}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`; }
+async function body(request: Request): Promise<any> { try { return await request.json(); } catch { return null; } }
+function text(value: unknown, max = 120) { return typeof value === "string" && value.trim() && value.length <= max ? value.trim() : null; }
+function dateFilter(period: string) { return period === "month" ? "30 days" : period === "week" ? "7 days" : "1 day"; }
+
+async function ensureAdminSchema() {
+  if (!sql) throw new Error("DATABASE_URL is not configured");
+  adminSchemaPromise ??= (async () => {
+    await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled boolean NOT NULL DEFAULT false`;
+    await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at timestamptz`;
+    await sql`CREATE TABLE IF NOT EXISTS visitor_events (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), visitor_key text NOT NULL, visit_date date NOT NULL DEFAULT CURRENT_DATE, path text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(visitor_key, visit_date))`;
+    await sql`CREATE INDEX IF NOT EXISTS visitor_events_date_idx ON visitor_events (visit_date, created_at)`;
+    await sql`CREATE TABLE IF NOT EXISTS admin_activity (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), action text NOT NULL, actor text NOT NULL, target_id uuid, details jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now())`;
+    await sql`CREATE INDEX IF NOT EXISTS admin_activity_created_idx ON admin_activity (created_at DESC)`;
+  })();
+  return adminSchemaPromise;
+}
+
+async function adminUser(request: Request) {
+  const token = cookies(request).admin_session;
+  if (!token || !sql) return null;
+  try { const { payload } = await jwtVerify(token, adminSecret); return payload["role"] === "admin" && typeof payload.sub === "string" ? { username: payload.sub } : null; } catch { return null; }
+}
+async function audit(action: string, actor: string, targetId: string | null = null, details: Record<string, unknown> = {}) { if (sql) await sql`INSERT INTO admin_activity (action,actor,target_id,details) VALUES (${action},${actor},${targetId},${JSON.stringify(details)}::jsonb)`; }
+async function issueAdmin(username: string) { return new SignJWT({ role: "admin" }).setProtectedHeader({ alg: "HS256" }).setSubject(username).setIssuedAt().setExpirationTime("8h").sign(adminSecret); }
+function cleanUser(row: any) { return { ...row, disabled: Boolean(row.disabled) }; }
+
+export async function trackVisitor(request: Request) {
+  if (!sql || new URL(request.url).pathname.startsWith("/api/") || request.method !== "GET") return;
+  try {
+    await ensureAdminSchema();
+    const url = new URL(request.url);
+    const source = `${request.headers.get("x-forwarded-for") ?? "unknown"}|${request.headers.get("user-agent") ?? "unknown"}`;
+    const visitorKey = createHash("sha256").update(source).digest("hex");
+    await sql`INSERT INTO visitor_events (visitor_key,path) VALUES (${visitorKey},${url.pathname}) ON CONFLICT (visitor_key,visit_date) DO NOTHING`;
+  } catch (error) { console.error("visitor tracking failed", error); }
+}
+
+export async function handleAdminApi(request: Request): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith("/api/admin")) return null;
+  try {
+    await ensureAdminSchema();
+    if (!sql) return fail("Backend is not configured", 503);
+    if (url.pathname === "/api/admin/login" && request.method === "POST") {
+      const input = await body(request); const username = text(input?.username, 80); const password = typeof input?.password === "string" ? input.password : "";
+      const configuredUsername = process.env["ADMIN_USERNAME"]; const configuredHash = process.env["ADMIN_PASSWORD_HASH"];
+      if (!configuredUsername || !configuredHash || username !== configuredUsername || !(await compare(password, configuredHash))) return fail("Invalid admin credentials.", 401);
+      const token = await issueAdmin(username); await audit("admin_login", username); return json({ admin: { username } }, 200, { "Set-Cookie": cookie(token, 60 * 60 * 8) });
+    }
+    if (url.pathname === "/api/admin/logout" && request.method === "POST") { const actor = await adminUser(request); if (actor) await audit("admin_logout", actor.username); return json({ ok: true }, 200, { "Set-Cookie": cookie("", 0) }); }
+    const actor = await adminUser(request); if (!actor) return fail("Admin authentication required.", 401);
+    if (url.pathname === "/api/admin/session" && request.method === "GET") return json({ admin: actor });
+    if (url.pathname === "/api/admin/overview" && request.method === "GET") {
+      const [users, online, visitors, today, week, month, matches, activeRooms, waitingRooms, wins, losses, points, newToday, newWeek, newMonth, realMatches, botMatches] = await Promise.all([
+        sql`SELECT COUNT(*)::int AS count FROM users`, sql`SELECT COUNT(DISTINCT player_token)::int AS count FROM (SELECT p1_token AS player_token FROM rooms WHERE updated_at > now() - interval '5 minutes' UNION ALL SELECT p2_token AS player_token FROM rooms WHERE updated_at > now() - interval '5 minutes') a WHERE player_token IS NOT NULL`,
+        sql`SELECT COUNT(DISTINCT visitor_key)::int AS count FROM visitor_events`, sql`SELECT COUNT(DISTINCT visitor_key)::int AS count FROM visitor_events WHERE visit_date=CURRENT_DATE`, sql`SELECT COUNT(DISTINCT visitor_key)::int AS count FROM visitor_events WHERE visit_date >= CURRENT_DATE - 6`, sql`SELECT COUNT(DISTINCT visitor_key)::int AS count FROM visitor_events WHERE visit_date >= CURRENT_DATE - 29`,
+        sql`SELECT COUNT(*)::int AS count FROM matches`, sql`SELECT COUNT(*)::int AS count FROM rooms WHERE status='playing'`, sql`SELECT COUNT(*)::int AS count FROM rooms WHERE status='waiting'`, sql`SELECT COALESCE(SUM(wins),0)::int AS count FROM users`, sql`SELECT COALESCE(SUM(losses),0)::int AS count FROM users`, sql`SELECT COALESCE(SUM(GREATEST(points,0)),0)::int AS count FROM matches`, sql`SELECT COUNT(*)::int AS count FROM users WHERE created_at::date=CURRENT_DATE`, sql`SELECT COUNT(*)::int AS count FROM users WHERE created_at >= CURRENT_DATE - 6`, sql`SELECT COUNT(*)::int AS count FROM users WHERE created_at >= CURRENT_DATE - 29`, sql`SELECT COUNT(*)::int AS count FROM matches WHERE opponent_type='human'`, sql`SELECT COUNT(*)::int AS count FROM matches WHERE opponent_type='ai'`,
+      ]);
+      const value = (result: any[]) => Number(result[0]?.["count"] ?? 0);
+      return json({ stats: { users: value(users), online: value(online), visitors: value(visitors), visitorsToday: value(today), visitorsWeek: value(week), visitorsMonth: value(month), matches: value(matches), activeRooms: value(activeRooms), waitingRooms: value(waitingRooms), wins: value(wins), losses: value(losses), points: value(points), newToday: value(newToday), newWeek: value(newWeek), newMonth: value(newMonth), realMatches: value(realMatches), botMatches: value(botMatches) } });
+    }
+    if (url.pathname === "/api/admin/users" && request.method === "GET") {
+      const search = text(url.searchParams.get("search"), 80); const rows = search ? await sql`SELECT u.*, ROW_NUMBER() OVER (ORDER BY points DESC,wins DESC)::int AS rank FROM users u WHERE username ILIKE ${`%${search}%`} OR email ILIKE ${`%${search}%`} ORDER BY points DESC LIMIT 100` : await sql`SELECT u.*, ROW_NUMBER() OVER (ORDER BY points DESC,wins DESC)::int AS rank FROM users u ORDER BY points DESC LIMIT 100`;
+      return json({ users: rows.map(cleanUser) });
+    }
+    const userMatch = url.pathname.match(/^\/api\/admin\/users\/([0-9a-f-]+)(?:\/matches)?$/i);
+    if (userMatch && request.method === "GET") { const id = userMatch[1]; if (url.pathname.endsWith("/matches")) return json({ matches: await sql`SELECT * FROM matches WHERE user_id=${id} ORDER BY created_at DESC LIMIT 200` }); const rows = await sql`SELECT u.*, (SELECT COUNT(*)::int FROM matches m WHERE m.user_id=u.id) AS match_count, ROW_NUMBER() OVER (ORDER BY points DESC,wins DESC)::int AS rank FROM users u WHERE u.id=${id}`; return rows[0] ? json({ user: cleanUser(rows[0]) }) : fail("User not found.", 404); }
+    if (userMatch && request.method === "PATCH") { const id = userMatch[1]; const input = await body(request); const sets: string[] = []; const values: any[] = []; if (typeof input?.username === "string" && input.username.trim()) { sets.push("username"); values.push(input.username.trim()); } const numeric = ["points", "wins", "losses"] as const; for (const field of numeric) if (Number.isInteger(input?.[field])) { sets.push(field); values.push(input[field]); } if (typeof input?.disabled === "boolean") { sets.push("disabled"); values.push(input.disabled); } if (typeof input?.password === "string" && input.password.length >= 8) { sets.push("password_hash"); values.push(await hash(input.password, 12)); } if (!sets.length) return fail("No valid changes supplied."); const rows = await sql`SELECT id FROM users WHERE id=${id}`; if (!rows[0]) return fail("User not found.", 404); for (let i = 0; i < sets.length; i++) { const field = sets[i]; const value = values[i]; if (field === "username") await sql`UPDATE users SET username=${value} WHERE id=${id}`; if (field === "points") await sql`UPDATE users SET points=${value} WHERE id=${id}`; if (field === "wins") await sql`UPDATE users SET wins=${value} WHERE id=${id}`; if (field === "losses") await sql`UPDATE users SET losses=${value} WHERE id=${id}`; if (field === "disabled") await sql`UPDATE users SET disabled=${value} WHERE id=${id}`; if (field === "password_hash") await sql`UPDATE users SET password_hash=${value} WHERE id=${id}`; } await audit("user_updated", actor.username, id, { fields: sets }); return json({ ok: true }); }
+    if (userMatch && request.method === "DELETE") { const id = userMatch[1]; await sql`DELETE FROM users WHERE id=${id}`; await audit("user_deleted", actor.username, id); return json({ ok: true }); }
+    if (url.pathname === "/api/admin/matches" && request.method === "GET") return json({ matches: await sql`SELECT m.*,u.username FROM matches m JOIN users u ON u.id=m.user_id ORDER BY m.created_at DESC LIMIT 200` });
+    if (url.pathname === "/api/admin/rooms" && request.method === "GET") return json({ rooms: await sql`SELECT id,code,is_public,status,p1_name,p2_name,is_bot,updated_at,created_at FROM rooms ORDER BY updated_at DESC LIMIT 200` });
+    if (url.pathname === "/api/admin/activity" && request.method === "GET") return json({ activity: await sql`SELECT * FROM admin_activity ORDER BY created_at DESC LIMIT 200` });
+    if (url.pathname === "/api/admin/analytics" && request.method === "GET") { const [growth, visits, dailyMatches, split] = await Promise.all([sql`SELECT created_at::date AS day,COUNT(*)::int AS count FROM users WHERE created_at >= CURRENT_DATE - 29 GROUP BY day ORDER BY day`, sql`SELECT visit_date AS day,COUNT(DISTINCT visitor_key)::int AS count FROM visitor_events WHERE visit_date >= CURRENT_DATE - 29 GROUP BY day ORDER BY day`, sql`SELECT created_at::date AS day,COUNT(*)::int AS count FROM matches WHERE created_at >= CURRENT_DATE - 29 GROUP BY day ORDER BY day`, sql`SELECT opponent_type AS type,COUNT(*)::int AS count FROM matches GROUP BY opponent_type`]); return json({ growth, visits, dailyMatches, split }); }
+    return fail("Admin API route not found.", 404);
+  } catch (caught) { console.error(caught); const duplicate = caught instanceof Error && caught.message.includes("duplicate"); return fail(duplicate ? "That value is already in use." : "Admin request failed.", duplicate ? 409 : 500); }
+}
