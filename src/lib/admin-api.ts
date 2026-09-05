@@ -26,6 +26,7 @@ export const adminApi = {
   updateUser: (id: string, changes: Record<string, unknown>) => request<{ ok: true }>(`/api/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(changes) }),
   deleteUser: (id: string) => request<{ ok: true }>(`/api/admin/users/${id}`, { method: "DELETE" }),
   matches: () => request<{ matches: any[] }>("/api/admin/matches"),
+  match: (id: string) => request<{ match: any | null; room: any | null }>(`/api/admin/matches/${id}`),
   rooms: () => request<{ rooms: any[] }>("/api/admin/rooms"),
   analytics: () => request<{ growth: any[]; visits: any[]; dailyMatches: any[]; split: any[] }>("/api/admin/analytics"),
   activity: () => request<{ activity: any[] }>("/api/admin/activity"),

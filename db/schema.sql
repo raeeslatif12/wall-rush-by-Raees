@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS matches (
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   opponent_type text NOT NULL,
   opponent_name text,
+  room_code text,
   result text NOT NULL CHECK (result IN ('win', 'loss')),
   points integer NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now()

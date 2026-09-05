@@ -109,6 +109,7 @@ function RoomPage() {
     void app.recordResult(winner === seat, {
       opponentType: isBot ? "ai" : "human",
       opponentName: (seat === 0 ? room.p2_name : room.p1_name) ?? "Player",
+      roomCode: room.code,
       ranked: !isBot,
     });
   }, [room, seat, app]);
@@ -235,7 +236,7 @@ function RoomPage() {
       mySeat={seat}
       myName={app.displayName}
       oppName={oppName}
-      interactive={resignedBy === null && state.turn === seat && state.winner === null && !submitting}
+      interactive={resignedBy === null && state.winner === null && !submitting}
       clocks={{ ...room.state.clocks, running: state.winner === null && resignedBy === null }}
       emote={room.state.emote ?? null}
       onMove={onMove}

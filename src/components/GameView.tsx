@@ -71,6 +71,7 @@ export default function GameView({
     : [0, 0];
 
   const myTurn = state.turn === mySeat && state.winner === null && interactive;
+  const canResign = state.winner === null && interactive;
   const result =
     resultOverride ??
     (state.winner === null ? null : state.winner === mySeat ? "You won! 🎉" : "You lost");
@@ -83,8 +84,8 @@ export default function GameView({
         </Link>
         <button
           type="button"
-          onClick={onResign}
-          disabled={!myTurn}
+          onClick={() => { if (window.confirm("Are you sure you want to resign this match?")) onResign(); }}
+          disabled={!canResign}
           className="rounded-full bg-destructive/10 px-3 py-1.5 text-sm font-bold text-destructive"
         >
           ⚑ Resign

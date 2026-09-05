@@ -146,7 +146,26 @@ export async function handleAdminApi(request: Request): Promise<Response | null>
     if (userMatch && request.method === "GET") { const id = userMatch[1]; if (url.pathname.endsWith("/matches")) return json({ matches: await sql`SELECT * FROM matches WHERE user_id=${id} ORDER BY created_at DESC LIMIT 200` }); const rows = await sql`SELECT u.*, (SELECT COUNT(*)::int FROM matches m WHERE m.user_id=u.id) AS match_count, ROW_NUMBER() OVER (ORDER BY points DESC,wins DESC)::int AS rank FROM users u WHERE u.id=${id}`; return rows[0] ? json({ user: cleanUser(rows[0]) }) : fail("User not found.", 404); }
     if (userMatch && request.method === "PATCH") { const id = userMatch[1]; const input = await body(request); const sets: string[] = []; const values: any[] = []; if (typeof input?.username === "string" && input.username.trim()) { sets.push("username"); values.push(input.username.trim()); } const numeric = ["points", "wins", "losses"] as const; for (const field of numeric) if (Number.isInteger(input?.[field])) { sets.push(field); values.push(input[field]); } if (typeof input?.disabled === "boolean") { sets.push("disabled"); values.push(input.disabled); } if (typeof input?.password === "string" && input.password.length >= 8) { sets.push("password_hash"); values.push(await hash(input.password, 12)); } if (!sets.length) return fail("No valid changes supplied."); const rows = await sql`SELECT id FROM users WHERE id=${id}`; if (!rows[0]) return fail("User not found.", 404); for (let i = 0; i < sets.length; i++) { const field = sets[i]; const value = values[i]; if (field === "username") await sql`UPDATE users SET username=${value} WHERE id=${id}`; if (field === "points") await sql`UPDATE users SET points=${value} WHERE id=${id}`; if (field === "wins") await sql`UPDATE users SET wins=${value} WHERE id=${id}`; if (field === "losses") await sql`UPDATE users SET losses=${value} WHERE id=${id}`; if (field === "disabled") await sql`UPDATE users SET disabled=${value} WHERE id=${id}`; if (field === "password_hash") await sql`UPDATE users SET password_hash=${value} WHERE id=${id}`; } await audit("user_updated", actor.username, id, { fields: sets }); return json({ ok: true }); }
     if (userMatch && request.method === "DELETE") { const id = userMatch[1]; await sql`DELETE FROM users WHERE id=${id}`; await audit("user_deleted", actor.username, id); return json({ ok: true }); }
-    if (url.pathname === "/api/admin/matches" && request.method === "GET") return json({ matches: await sql`SELECT m.*,u.username FROM matches m JOIN users u ON u.id=m.user_id ORDER BY m.created_at DESC LIMIT 200` });
+    const matchDetail = url.pathname.match(/^\/api\/admin\/matches\/([0-9a-f-]+)$/i);
+    if (matchDetail && request.method === "GET") {
+      const matchRows = await sql`SELECT m.*,u.id AS player_id,u.username,u.email,u.points,u.games,u.wins,u.losses FROM matches m JOIN users u ON u.id=m.user_id WHERE m.id=${matchDetail[1]} LIMIT 1`;
+      if (matchRows[0]) {
+        const match = matchRows[0];
+        const rooms = match.room_code ? await sql`SELECT * FROM rooms WHERE code=${match.room_code} LIMIT 1` : [];
+        return json({ match: { ...match, status: rooms[0]?.status === "playing" ? "live" : rooms[0]?.status === "waiting" ? "waiting" : "completed" }, room: rooms[0] ?? null });
+      }
+      const rooms = await sql`SELECT * FROM rooms WHERE id=${matchDetail[1]} LIMIT 1`;
+      if (rooms[0]) return json({ match: null, room: rooms[0] });
+      return fail("Match not found.", 404);
+    }
+    if (url.pathname === "/api/admin/matches" && request.method === "GET") {
+      const [records, liveRooms] = await Promise.all([
+        sql`SELECT m.*,u.username,r.status AS room_status,r.state AS room_state FROM matches m JOIN users u ON u.id=m.user_id LEFT JOIN rooms r ON r.code=m.room_code ORDER BY m.created_at DESC LIMIT 200`,
+        sql`SELECT id,code,is_public,status,p1_name,p2_name,is_bot,state,winner,created_at,updated_at FROM rooms WHERE status IN ('waiting','playing') ORDER BY created_at DESC LIMIT 100`,
+      ]);
+      const live = liveRooms.map((room: any) => ({ id: room.id, record_type: "room", room_code: room.code, username: room.p1_name ?? "Waiting", opponent_name: room.p2_name ?? "Waiting", opponent_type: room.is_bot ? "ai" : "live", result: null, points: null, status: room.status === "playing" ? "live" : "waiting", winner: room.winner, created_at: room.created_at, updated_at: room.updated_at, is_bot: room.is_bot }));
+      return json({ matches: [...live, ...records.map((record: any) => ({ ...record, status: record.room_state?.resignedBy !== null && record.room_state?.resignedBy !== undefined ? "resigned" : record.room_status === "playing" ? "live" : record.room_status === "waiting" ? "waiting" : "completed" }))] });
+    }
     if (url.pathname === "/api/admin/rooms" && request.method === "GET") return json({ rooms: await sql`SELECT id,code,is_public,status,p1_name,p2_name,is_bot,updated_at,created_at FROM rooms ORDER BY updated_at DESC LIMIT 200` });
     if (url.pathname === "/api/admin/activity" && request.method === "GET") return json({ activity: await sql`SELECT * FROM admin_activity ORDER BY created_at DESC LIMIT 200` });
     if (url.pathname === "/api/admin/social-links" && request.method === "GET") return json({ links: await sql`SELECT * FROM social_links ORDER BY position ASC,label ASC` });

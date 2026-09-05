@@ -7,6 +7,7 @@ export interface RoomState {
   emote?: { seat: 0 | 1; emoji: string; at: number } | null;
   rematch?: [boolean, boolean];
   resignedBy?: 0 | 1 | null;
+  resignedAt?: number | null;
 }
 
 export interface Room {
@@ -34,6 +35,7 @@ export function freshRoomState(): RoomState {
     emote: null,
     rematch: [false, false],
     resignedBy: null,
+    resignedAt: null,
   };
 }
 

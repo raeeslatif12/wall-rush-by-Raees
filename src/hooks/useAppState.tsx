@@ -19,7 +19,7 @@ interface Ctx {
   settings: Settings;
   setSettings: (s: Partial<Settings>) => void;
   setName: (n: string) => void;
-  recordResult: (won: boolean, opts: { opponentType: string; opponentName?: string; ranked: boolean }) => Promise<void>;
+  recordResult: (won: boolean, opts: { opponentType: string; opponentName?: string; roomCode?: string; ranked: boolean }) => Promise<void>;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -86,7 +86,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
 
   const recordResult = useCallback(
-    async (won: boolean, opts: { opponentType: string; opponentName?: string; ranked: boolean }) => {
+    async (won: boolean, opts: { opponentType: string; opponentName?: string; roomCode?: string; ranked: boolean }) => {
       const gained = won ? (opts.ranked ? 25 : 8) : opts.ranked ? -8 : 0;
       const today = todayKey();
 
@@ -114,7 +114,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       const uid = session?.user?.id;
       if (uid) {
-        await api.recordMatch({ opponentType: opts.opponentType, opponentName: opts.opponentName, result: won ? "win" : "loss", points: gained, ranked: opts.ranked });
+        await api.recordMatch({ opponentType: opts.opponentType, opponentName: opts.opponentName, roomCode: opts.roomCode, result: won ? "win" : "loss", points: gained, ranked: opts.ranked });
         await loadProfile(uid);
       }
     },

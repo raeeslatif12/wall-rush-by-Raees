@@ -41,6 +41,7 @@ async function ensureSchema() {
     await sql`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS is_bot boolean NOT NULL DEFAULT false`;
     await sql`CREATE INDEX IF NOT EXISTS rooms_waiting_public_idx ON rooms (is_public, status, created_at DESC)`;
     await sql`CREATE TABLE IF NOT EXISTS matches (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE, opponent_type text NOT NULL, opponent_name text, result text NOT NULL, points integer NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now())`;
+    await sql`ALTER TABLE matches ADD COLUMN IF NOT EXISTS room_code text`;
     await sql`CREATE TABLE IF NOT EXISTS reviews (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE, username text NOT NULL, rating integer NOT NULL CHECK (rating BETWEEN 1 AND 5), comment text, likes integer NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now())`;
     await sql`CREATE TABLE IF NOT EXISTS social_links (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), label text NOT NULL UNIQUE, url text NOT NULL, icon text NOT NULL DEFAULT '🔗', enabled boolean NOT NULL DEFAULT true, position integer NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
     await sql`CREATE INDEX IF NOT EXISTS social_links_enabled_position_idx ON social_links (enabled, position, label)`;
@@ -93,7 +94,8 @@ export async function handleApi(request: Request): Promise<Response | null> {
       const seat = current.p1_token === token ? 0 : current.p2_token === token ? 1 : null;
       if (seat === null) return error("You are not in this room.", 403);
       const currentState = current.state as RoomState;
-      if (currentState.game.moveCount !== expectedMoveCount) return error("That game state is out of date.", 409);
+      if (action.type !== "resign" && currentState.game.moveCount !== expectedMoveCount) return error("That game state is out of date.", 409);
+      if ((action.type === "move" || action.type === "wall" || action.type === "resign") && current.status !== "playing") return error("This match is no longer active.", 409);
       const game = currentState.game;
       let nextState: RoomState = currentState;
       let nextStatus = current.status;
@@ -109,7 +111,8 @@ export async function handleApi(request: Request): Promise<Response | null> {
         if (nextGame.moveCount === game.moveCount) return error("That wall is not legal.", 409);
         nextState = { ...currentState, game: nextGame, clocks: advanceRoomClock(currentState, seat) };
       } else if (action.type === "resign") {
-        nextState = { ...currentState, resignedBy: seat };
+        requiresTurn = false;
+        nextState = { ...currentState, resignedBy: seat, resignedAt: Date.now() };
         nextStatus = "done";
         nextWinner = seat === 0 ? 1 : 0;
       } else if (action.type === "emote" && typeof action.emoji === "string" && action.emoji.length <= 8) {
@@ -121,8 +124,8 @@ export async function handleApi(request: Request): Promise<Response | null> {
         nextWinner = null;
       } else return error("Invalid room action.");
       const updated = requiresTurn
-        ? await sql`UPDATE rooms SET state=${JSON.stringify(nextState)}::jsonb,status=${nextStatus},winner=${nextWinner},updated_at=now() WHERE code=${actionMatch[1]} AND state->'game'->>'moveCount'=${String(expectedMoveCount)} AND ((p1_token=${token} AND state->'game'->>'turn'='0') OR (p2_token=${token} AND state->'game'->>'turn'='1')) RETURNING *`
-        : await sql`UPDATE rooms SET state=${JSON.stringify(nextState)}::jsonb,status=${nextStatus},winner=${nextWinner},updated_at=now() WHERE code=${actionMatch[1]} AND state->'game'->>'moveCount'=${String(expectedMoveCount)} AND (p1_token=${token} OR p2_token=${token}) RETURNING *`;
+        ? await sql`UPDATE rooms SET state=${JSON.stringify(nextState)}::jsonb,status=${nextStatus},winner=${nextWinner},updated_at=now() WHERE code=${actionMatch[1]} AND status='playing' AND winner IS NULL AND state->>'resignedBy' IS NULL AND state->'game'->>'moveCount'=${String(expectedMoveCount)} AND ((p1_token=${token} AND state->'game'->>'turn'='0') OR (p2_token=${token} AND state->'game'->>'turn'='1')) RETURNING *`
+        : await sql`UPDATE rooms SET state=${JSON.stringify(nextState)}::jsonb,status=${nextStatus},winner=${nextWinner},updated_at=now() WHERE code=${actionMatch[1]} AND status='playing' AND winner IS NULL AND state->>'resignedBy' IS NULL AND (p1_token=${token} OR p2_token=${token}) RETURNING *`;
       if (!updated[0]) return error("That turn has already changed. Refreshing the game state.", 409);
       return response({ room: room(updated[0]) });
     }
@@ -160,7 +163,7 @@ export async function handleApi(request: Request): Promise<Response | null> {
     if (path === "/api/ranking" && request.method === "GET") { const rows = await sql`SELECT id,username,points,games,wins FROM users ORDER BY points DESC, wins DESC LIMIT 50`; return response({ rows }); }
     if (path === "/api/online-count" && request.method === "GET") { const rows = await sql`SELECT COUNT(DISTINCT player_token)::int AS count FROM (SELECT p1_token AS player_token FROM rooms WHERE updated_at > now() - interval '5 minutes' UNION ALL SELECT p2_token AS player_token FROM rooms WHERE updated_at > now() - interval '5 minutes') active WHERE player_token IS NOT NULL`; return response({ count: Number(rows[0]?.["count"] ?? 0) }); }
     if (path === "/api/matches" && request.method === "POST") {
-      const user = await sessionUser(request); if (!user) return error("Please sign in.", 401); const input = await body(request); const opponentType = text(input?.opponentType, 30); const result = input?.result === "win" ? "win" : input?.result === "loss" ? "loss" : null; const points = typeof input?.points === "number" && Number.isInteger(input.points) ? input.points : 0; const ranked = input?.ranked === true; if (!opponentType || !result) return error("Invalid match."); await sql`INSERT INTO matches (user_id,opponent_type,opponent_name,result,points) VALUES (${user.id},${opponentType},${text(input?.opponentName, 80)},${result},${ranked ? points : 0})`; if (ranked) await sql`UPDATE users SET points=GREATEST(0,points+${points}), games=games+1, wins=wins+${result === "win" ? 1 : 0}, losses=losses+${result === "loss" ? 1 : 0}, last_played=CURRENT_DATE WHERE id=${user.id}`; return response({ ok: true }, 201);
+      const user = await sessionUser(request); if (!user) return error("Please sign in.", 401); const input = await body(request); const opponentType = text(input?.opponentType, 30); const result = input?.result === "win" ? "win" : input?.result === "loss" ? "loss" : null; const points = typeof input?.points === "number" && Number.isInteger(input.points) ? input.points : 0; const ranked = input?.ranked === true; const roomCode = text(input?.roomCode, 6)?.toUpperCase() ?? null; if (!opponentType || !result) return error("Invalid match."); await sql`INSERT INTO matches (user_id,opponent_type,opponent_name,room_code,result,points) VALUES (${user.id},${opponentType},${text(input?.opponentName, 80)},${roomCode},${result},${ranked ? points : 0})`; if (ranked) await sql`UPDATE users SET points=GREATEST(0,points+${points}), games=games+1, wins=wins+${result === "win" ? 1 : 0}, losses=losses+${result === "loss" ? 1 : 0}, last_played=CURRENT_DATE WHERE id=${user.id}`; return response({ ok: true }, 201);
     }
     if (path === "/api/reviews" && request.method === "GET") { const rows = await sql`SELECT id,username,rating,comment,likes,created_at FROM reviews ORDER BY created_at DESC LIMIT 50`; return response({ rows }); }
     if (path === "/api/reviews" && request.method === "POST") { const user = await sessionUser(request); if (!user) return error("Please sign in.", 401); const input = await body(request); const rating = Number(input?.rating); if (!Number.isInteger(rating) || rating < 1 || rating > 5) return error("Rating must be between 1 and 5."); const rows = await sql`INSERT INTO reviews (user_id,username,rating,comment) VALUES (${user.id},${user.username},${rating},${text(input?.comment, 1000)}) RETURNING id,username,rating,comment,likes,created_at`; return response({ review: rows[0] }, 201); }
