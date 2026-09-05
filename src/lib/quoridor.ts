@@ -1,10 +1,12 @@
 export const N = 9;
 
 export type Orient = "h" | "v";
+export interface WallInventory { h: number; v: number; }
 export interface Wall {
   r: number; // 0..7
   c: number; // 0..7
   o: Orient;
+  by?: 0 | 1;
 }
 export interface Pos {
   r: number;
@@ -13,7 +15,7 @@ export interface Pos {
 export interface GameState {
   pawns: Pos[];
   walls: Wall[];
-  wallsLeft: number[];
+  wallsLeft: WallInventory[];
   turn: number;
   winner: number | null;
   moveCount: number;
@@ -27,7 +29,7 @@ export function initialState(): GameState {
       { r: 0, c: 4 },
     ],
     walls: [],
-    wallsLeft: [10, 10],
+    wallsLeft: [{ h: 1, v: 1 }, { h: 1, v: 1 }],
     turn: 0,
     winner: null,
     moveCount: 0,
@@ -165,9 +167,23 @@ export function wallConflicts(walls: Wall[], w: Wall): boolean {
   return false;
 }
 
+function inventoryValue(value: WallInventory | number | undefined): WallInventory {
+  if (typeof value === "number") return { h: value > 0 ? 1 : 0, v: value > 0 ? 1 : 0 };
+  return value ?? { h: 0, v: 0 };
+}
+
+function inventoryFor(s: GameState, player: number): WallInventory {
+  return inventoryValue(s.wallsLeft[player] as WallInventory | number | undefined);
+}
+
+export function wallCount(s: GameState, player: number) {
+  const inventory = inventoryFor(s, player);
+  return inventory.h + inventory.v;
+}
+
 export function canPlaceWall(s: GameState, w: Wall, player: number): boolean {
   if (s.winner !== null) return false;
-  if (s.wallsLeft[player]! <= 0) return false;
+  if (inventoryFor(s, player)[w.o] <= 0) return false;
   if (wallConflicts(s.walls, w)) return false;
   const next = [...s.walls, w];
   if (s.pawns.some((pawn, index) => distanceToGoal(next, pawn, index) === Infinity)) return false;
@@ -199,11 +215,13 @@ export function applyMove(s: GameState, to: Pos): GameState {
 export function applyWall(s: GameState, w: Wall): GameState {
   const player = s.turn;
   if (!canPlaceWall(s, w, player)) return s;
-  const wallsLeft = [...s.wallsLeft];
-  wallsLeft[player] = wallsLeft[player]! - 1;
+  const wallsLeft = s.wallsLeft.map((inventory, index) => {
+    const current = inventoryValue(inventory as WallInventory | number);
+    return index === player ? { ...current, [w.o]: Math.max(0, current[w.o] - 1) } : { ...current };
+  });
   return {
     ...s,
-    walls: [...s.walls, w],
+    walls: [...s.walls, { ...w, by: player as 0 | 1 }],
     wallsLeft,
     turn: (player + 1) % s.pawns.length,
     moveCount: s.moveCount + 1,
@@ -213,7 +231,8 @@ export function applyWall(s: GameState, w: Wall): GameState {
 
 export function legalWalls(s: GameState, player: number): Wall[] {
   const out: Wall[] = [];
-  if (s.wallsLeft[player]! <= 0) return out;
+  const inventory = inventoryFor(s, player);
+  if (inventory.h <= 0 && inventory.v <= 0) return out;
   for (let r = 0; r < N - 1; r++)
     for (let c = 0; c < N - 1; c++)
       for (const o of ["h", "v"] as Orient[]) {

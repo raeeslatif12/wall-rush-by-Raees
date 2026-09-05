@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import Board from "./Board";
-import type { GameState, Orient, Pos, Wall } from "@/lib/quoridor";
+import { wallCount, type GameState, type Orient, type Pos, type Wall } from "@/lib/quoridor";
 
 export interface Clocks {
   base: [number, number];
@@ -51,8 +51,8 @@ export default function GameView({
   onRematch,
   resultOverride,
 }: Props) {
-  const [mode, setMode] = useState<"move" | "wall">("move");
-  const [orient, setOrient] = useState<Orient>("h");
+  const [draggingOrient, setDraggingOrient] = useState<Orient | null>(null);
+  const [preview, setPreview] = useState<Wall | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -60,6 +60,25 @@ export default function GameView({
     const t = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(t);
   }, [clocks?.running]);
+
+  useEffect(() => {
+    if (!draggingOrient) return;
+    const cancelDrag = () => {
+      setDraggingOrient(null);
+      setPreview(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") cancelDrag();
+    };
+    window.addEventListener("pointerup", cancelDrag);
+    window.addEventListener("pointercancel", cancelDrag);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerup", cancelDrag);
+      window.removeEventListener("pointercancel", cancelDrag);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [draggingOrient]);
 
   const oppSeat = (mySeat === 0 ? 1 : 0) as 0 | 1;
   const elapsed = clocks && clocks.running ? (now - clocks.lastMoveAt) / 1000 : 0;
@@ -75,6 +94,13 @@ export default function GameView({
   const result =
     resultOverride ??
     (state.winner === null ? null : state.winner === mySeat ? "You won! 🎉" : "You lost");
+
+  function beginDrag(orient: Orient, event: React.PointerEvent<HTMLButtonElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    const inventory = state.wallsLeft[mySeat] as { h: number; v: number } | number | undefined;
+    const available = typeof inventory === "number" ? inventory > 0 : inventory?.[orient] > 0;
+    if (myTurn && available) setDraggingOrient(orient);
+  }
 
   return (
     <div className="mx-auto w-full max-w-md px-4 pb-28 pt-4">
@@ -93,58 +119,38 @@ export default function GameView({
       </div>
 
       <div className="card-surface mb-3 flex items-center justify-between p-3">
-        <Seat name={oppName} walls={state.wallsLeft[oppSeat]!} time={clocks ? fmt(left[oppSeat]!) : null} active={state.turn === oppSeat} color="p2" emoji={emote?.seat === oppSeat ? emote.emoji : null} />
+        <Seat name={oppName} walls={wallCount(state, oppSeat)} time={clocks ? fmt(left[oppSeat]!) : null} active={state.turn === oppSeat} color="p2" emoji={emote?.seat === oppSeat ? emote.emoji : null} />
         <span className="px-2 text-xs font-bold text-muted-foreground">VS</span>
-        <Seat name={myName} walls={state.wallsLeft[mySeat]!} time={clocks ? fmt(left[mySeat]!) : null} active={state.turn === mySeat} color="p1" emoji={emote?.seat === mySeat ? emote.emoji : null} right />
+        <Seat name={myName} walls={wallCount(state, mySeat)} time={clocks ? fmt(left[mySeat]!) : null} active={state.turn === mySeat} color="p1" emoji={emote?.seat === mySeat ? emote.emoji : null} right />
       </div>
 
       <p className="mb-2 text-center text-xs font-semibold text-muted-foreground">
-        {statusLine ?? (myTurn ? "Your move — tap a cell, or place a wall" : "Waiting for opponent…")}
+        {statusLine ?? (myTurn ? "Your move — tap a cell or drag a wall onto the board" : "Waiting for opponent…")}
       </p>
 
       <Board
         state={state}
         me={mySeat}
         interactive={myTurn}
-        mode={mode}
-        orient={orient}
+        draggingOrient={draggingOrient}
+        preview={preview}
         flipped={mySeat === 1}
         onMove={(p) => {
           onMove(p);
-          setMode("move");
         }}
-        onWall={(w) => {
-          onWall(w);
-          setMode("move");
-        }}
+        onPreview={setPreview}
+        onDrop={(w) => { onWall(w); setDraggingOrient(null); setPreview(null); }}
       />
 
-      <div className="mt-3 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setMode("move")}
-          disabled={!myTurn}
-          className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-bold transition-colors ${mode === "move" ? "bg-primary text-primary-foreground" : "card-surface"}`}
-        >
-          Move
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("wall")}
-          disabled={!myTurn}
-          className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-bold transition-colors ${mode === "wall" ? "bg-primary text-primary-foreground" : "card-surface"}`}
-        >
-          🧱 Wall {state.wallsLeft[mySeat]}
-        </button>
-        <button
-          type="button"
-          onClick={() => setOrient((o) => (o === "h" ? "v" : "h"))}
-          disabled={!myTurn}
-          className="card-surface px-3 py-2.5 text-sm font-bold"
-          aria-label="toggle wall orientation"
-        >
-          {orient === "h" ? "▬" : "▮"}
-        </button>
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        {(["h", "v"] as Orient[]).map((orient) => {
+          const inventory = state.wallsLeft[mySeat] as { h: number; v: number } | number | undefined;
+          const available = typeof inventory === "number" ? inventory > 0 : inventory?.[orient] > 0;
+          return <button key={orient} type="button" disabled={!myTurn || !available} onPointerDown={(event) => beginDrag(orient, event)} className={`wall-inventory-piece ${orient} ${draggingOrient === orient ? "is-dragging" : ""}`} aria-label={`Drag ${orient === "h" ? "horizontal" : "vertical"} wall`}>
+            <span className="wall-inventory-bar" />
+            <span><strong>{orient === "h" ? "Horizontal" : "Vertical"}</strong><small>{available ? "Drag to place" : "Used"}</small></span>
+          </button>;
+        })}
       </div>
 
       {onEmote && (

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef, type PointerEvent } from "react";
 import { N, type GameState, type Orient, type Pos, type Wall, canPlaceWall, legalMoves, samePos } from "@/lib/quoridor";
 
 interface Props {
@@ -6,11 +6,15 @@ interface Props {
   /** Which seat the human controls (null = spectate / both handled outside). */
   me: 0 | 1;
   interactive: boolean;
-  mode: "move" | "wall";
-  orient: Orient;
+  draggingOrient?: Orient | null;
+  preview?: Wall | null;
+  mode?: "move" | "wall";
+  orient?: Orient;
   flipped?: boolean;
   onMove: (p: Pos) => void;
-  onWall: (w: Wall) => void;
+  onPreview?: (w: Wall | null) => void;
+  onDrop?: (w: Wall) => void;
+  onWall?: (w: Wall) => void;
 }
 
 const CELL = "minmax(0, 1fr)";
@@ -25,11 +29,27 @@ function template() {
   return parts.join(" ");
 }
 
-export default function Board({ state, me, interactive, mode, orient, flipped, onMove, onWall }: Props) {
+export default function Board({ state, me, interactive, draggingOrient, preview, flipped, onMove, onPreview, onDrop }: Props) {
+  const boardRef = useRef<HTMLDivElement>(null);
   const moves = useMemo(
-    () => (interactive && mode === "move" && state.winner === null ? legalMoves(state, me) : []),
-    [state, me, interactive, mode],
+    () => (interactive && !draggingOrient && state.winner === null ? legalMoves(state, me) : []),
+    [state, me, interactive, draggingOrient],
   );
+
+  function wallAtPoint(event: PointerEvent<HTMLDivElement>): Wall | null {
+    if (!draggingOrient || !boardRef.current) return null;
+    const rect = boardRef.current.getBoundingClientRect();
+    let x = (event.clientX - rect.left) / rect.width;
+    let y = (event.clientY - rect.top) / rect.height;
+    if (flipped) { x = 1 - x; y = 1 - y; }
+    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+    const gap = 10 / rect.width;
+    const cell = (1 - 8 * gap) / 9;
+    const c = Math.round((x - cell - gap / 2) / (cell + gap));
+    const r = Math.round((y - cell - gap / 2) / (cell + gap));
+    if (r < 0 || r > 7 || c < 0 || c > 7) return null;
+    return { r, c, o: draggingOrient };
+  }
 
   const cells = [];
   for (let r = 0; r < N; r++) {
@@ -71,7 +91,7 @@ export default function Board({ state, me, interactive, mode, orient, flipped, o
   const wallEls = state.walls.map((w) => (
     <div
       key={`w${w.o}${w.r}-${w.c}`}
-      className="pointer-events-none z-20 rounded-[3px] bg-wall shadow-[0_2px_4px_rgba(0,0,0,0.22)]"
+      className={`pointer-events-none z-20 rounded-[3px] shadow-[0_2px_4px_rgba(0,0,0,0.22)] ${w.by === 1 ? "bg-red-500" : "bg-blue-600"}`}
       style={
         w.o === "h"
           ? { gridRow: 2 * w.r + 2, gridColumn: `${2 * w.c + 1} / span 3`, height: "38%", alignSelf: "center" }
@@ -80,45 +100,10 @@ export default function Board({ state, me, interactive, mode, orient, flipped, o
     />
   ));
 
-  const slots = [];
-  if (interactive && mode === "wall" && state.winner === null) {
-    for (let r = 0; r < N - 1; r++) {
-      for (let c = 0; c < N - 1; c++) {
-        const w: Wall = { r, c, o: orient };
-        const ok = canPlaceWall(state, w, me);
-        slots.push(
-          <button
-            key={`s${r}-${c}`}
-            type="button"
-            aria-label={`wall ${orient} ${r}-${c}`}
-            disabled={!ok}
-            onClick={() => ok && onWall(w)}
-            className={[
-              "group z-30 flex items-center justify-center rounded-[3px] transition-opacity",
-              ok ? "cursor-pointer opacity-100" : "pointer-events-none opacity-0",
-            ].join(" ")}
-            style={
-              orient === "h"
-                ? { gridRow: 2 * r + 2, gridColumn: `${2 * c + 1} / span 3` }
-                : { gridColumn: 2 * c + 2, gridRow: `${2 * r + 1} / span 3` }
-            }
-          >
-            <span
-              className={[
-                "block rounded-[3px] bg-primary/35 shadow-[0_1px_3px_rgba(0,0,0,0.14)] transition-all",
-                orient === "h" ? "h-[38%] w-full" : "h-full w-[38%]",
-                "group-hover:bg-primary group-hover:shadow-[0_2px_6px_rgba(0,0,0,0.25)]",
-              ].join(" ")}
-            />
-          </button>,
-        );
-      }
-    }
-  }
-
   return (
     <div
-      className="grid aspect-square w-full gap-0 rounded-2xl bg-board p-2 shadow-[var(--shadow-card)]"
+      ref={boardRef}
+      className="relative grid aspect-square w-full gap-0 rounded-2xl bg-board p-2 shadow-[var(--shadow-card)] touch-none"
       style={{
         gridTemplateColumns: template(),
         gridTemplateRows: template(),
@@ -127,7 +112,8 @@ export default function Board({ state, me, interactive, mode, orient, flipped, o
     >
       {cells}
       {wallEls}
-      {slots}
+      {preview && <div className={`pointer-events-none z-30 rounded-[3px] ${canPlaceWall(state, preview, me) ? me === 1 ? "bg-red-500/70" : "bg-blue-600/70" : "bg-destructive/70"}`} style={preview.o === "h" ? { gridRow: 2 * preview.r + 2, gridColumn: `${2 * preview.c + 1} / span 3`, height: "55%", alignSelf: "center" } : { gridColumn: 2 * preview.c + 2, gridRow: `${2 * preview.r + 1} / span 3`, width: "55%", justifySelf: "center" }} />}
+      {draggingOrient && <div className="absolute inset-0 z-40" onPointerMove={(event) => onPreview?.(wallAtPoint(event))} onPointerLeave={() => onPreview?.(null)} onPointerUp={(event) => { const wall = wallAtPoint(event); if (wall && canPlaceWall(state, wall, me)) onDrop?.(wall); }} />}
     </div>
   );
 }

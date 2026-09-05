@@ -121,7 +121,7 @@ export async function handleApi(request: Request): Promise<Response | null> {
         requiresTurn = false;
         nextState = { ...currentState, emote: { seat, emoji: action.emoji, at: Date.now() } };
       } else if (action.type === "rematch") {
-        nextState = { ...currentState, game: { pawns: [{ r: 8, c: 4 }, { r: 0, c: 4 }], walls: [], wallsLeft: [10, 10], turn: 0, winner: null, moveCount: 0, history: [] }, clocks: { base: [300, 300], lastMoveAt: Date.now() }, resignedBy: null, rematch: [false, false] };
+        nextState = { ...currentState, game: { pawns: [{ r: 8, c: 4 }, { r: 0, c: 4 }], walls: [], wallsLeft: [{ h: 1, v: 1 }, { h: 1, v: 1 }], turn: 0, winner: null, moveCount: 0, history: [] }, clocks: { base: [300, 300], lastMoveAt: Date.now() }, resignedBy: null, rematch: [false, false] };
         nextStatus = "playing";
         nextWinner = null;
       } else return error("Invalid room action.");

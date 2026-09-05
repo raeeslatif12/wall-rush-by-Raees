@@ -7,6 +7,7 @@ import {
   distanceToGoal,
   legalMoves,
   legalWalls,
+  wallCount,
 } from "./quoridor";
 
 export type Difficulty = "easy" | "normal" | "hard" | "hardcore";
@@ -19,7 +20,7 @@ function evaluate(s: GameState, me: 0 | 1): number {
   const dOpp = distanceToGoal(s.walls, s.pawns[opp]!, opp);
   if (dMe === 0) return 1000;
   if (dOpp === 0) return -1000;
-  const wallBonus = (s.wallsLeft[me]! - s.wallsLeft[opp]!) * 0.6;
+  const wallBonus = (wallCount(s, me) - wallCount(s, opp)) * 0.6;
   return (dOpp - dMe) * 3 + wallBonus;
 }
 
@@ -101,7 +102,7 @@ export function chooseAction(s: GameState, me: 0 | 1, difficulty: Difficulty): A
     const opp = (me === 0 ? 1 : 0) as 0 | 1;
     const dMe = distanceToGoal(s.walls, s.pawns[me]!, me);
     const dOpp = distanceToGoal(s.walls, s.pawns[opp]!, opp);
-    if (dOpp < dMe && s.wallsLeft[me]! > 0 && Math.random() < 0.6) {
+    if (dOpp < dMe && wallCount(s, me) > 0 && Math.random() < 0.6) {
       const w = candidateWalls(s, me, 4);
       if (w.length) return { type: "wall", wall: w[0]! };
     }
