@@ -11,11 +11,11 @@ export interface Pos {
   c: number;
 }
 export interface GameState {
-  pawns: [Pos, Pos];
+  pawns: Pos[];
   walls: Wall[];
-  wallsLeft: [number, number];
-  turn: 0 | 1;
-  winner: 0 | 1 | null;
+  wallsLeft: number[];
+  turn: number;
+  winner: number | null;
   moveCount: number;
   history: string[];
 }
@@ -33,6 +33,10 @@ export function initialState(): GameState {
     moveCount: 0,
     history: [],
   };
+}
+
+export function playerCount(s: GameState) {
+  return s.pawns.length;
 }
 
 export function wallKey(w: Wall) {
@@ -83,25 +87,32 @@ function stepNeighbours(walls: Wall[], p: Pos): Pos[] {
   return out;
 }
 
-export function goalRow(player: 0 | 1) {
+export function goalRow(player: number) {
   return player === 0 ? 0 : 8;
 }
 
+export function hasReachedGoal(player: number, pos: Pos) {
+  if (player === 0) return pos.r === 0;
+  if (player === 1) return pos.r === N - 1;
+  if (player === 2) return pos.c === N - 1;
+  return pos.c === 0;
+}
+
 /** Legal pawn destinations including jumps. */
-export function legalMoves(s: GameState, player: 0 | 1): Pos[] {
-  const me = s.pawns[player];
-  const other = s.pawns[player === 0 ? 1 : 0];
+export function legalMoves(s: GameState, player: number): Pos[] {
+  const me = s.pawns[player]!;
   const res: Pos[] = [];
   for (const d of DIRS) {
     const n = { r: me.r + d.r, c: me.c + d.c };
     if (!inBoard(n) || blocked(s.walls, me, n)) continue;
-    if (!samePos(n, other)) {
+    const occupied = s.pawns.findIndex((pawn, index) => index !== player && samePos(pawn, n));
+    if (occupied === -1) {
       res.push(n);
       continue;
     }
     // opponent there -> try jump straight over
     const j = { r: n.r + d.r, c: n.c + d.c };
-    if (inBoard(j) && !blocked(s.walls, n, j)) {
+    if (inBoard(j) && !blocked(s.walls, n, j) && !s.pawns.some((pawn, index) => index !== player && samePos(pawn, j))) {
       res.push(j);
     } else {
       // diagonals around the opponent
@@ -109,7 +120,7 @@ export function legalMoves(s: GameState, player: 0 | 1): Pos[] {
         if (d2.r === d.r && d2.c === d.c) continue;
         if (d2.r === -d.r && d2.c === -d.c) continue;
         const dg = { r: n.r + d2.r, c: n.c + d2.c };
-        if (inBoard(dg) && !blocked(s.walls, n, dg) && !samePos(dg, me)) res.push(dg);
+        if (inBoard(dg) && !blocked(s.walls, n, dg) && !s.pawns.some((pawn, index) => index !== player && samePos(pawn, dg))) res.push(dg);
       }
     }
   }
@@ -123,15 +134,14 @@ export function legalMoves(s: GameState, player: 0 | 1): Pos[] {
 }
 
 /** Shortest path length to the goal row, or Infinity if unreachable. */
-export function distanceToGoal(walls: Wall[], from: Pos, player: 0 | 1): number {
-  const goal = goalRow(player);
+export function distanceToGoal(walls: Wall[], from: Pos, player: number): number {
   const dist = new Map<string, number>();
   const q: Pos[] = [from];
   dist.set(`${from.r},${from.c}`, 0);
   while (q.length) {
     const cur = q.shift()!;
     const d = dist.get(`${cur.r},${cur.c}`)!;
-    if (cur.r === goal) return d;
+    if (hasReachedGoal(player, cur)) return d;
     for (const n of stepNeighbours(walls, cur)) {
       const k = `${n.r},${n.c}`;
       if (dist.has(k)) continue;
@@ -155,13 +165,12 @@ export function wallConflicts(walls: Wall[], w: Wall): boolean {
   return false;
 }
 
-export function canPlaceWall(s: GameState, w: Wall, player: 0 | 1): boolean {
+export function canPlaceWall(s: GameState, w: Wall, player: number): boolean {
   if (s.winner !== null) return false;
-  if (s.wallsLeft[player] <= 0) return false;
+  if (s.wallsLeft[player]! <= 0) return false;
   if (wallConflicts(s.walls, w)) return false;
   const next = [...s.walls, w];
-  if (distanceToGoal(next, s.pawns[0], 0) === Infinity) return false;
-  if (distanceToGoal(next, s.pawns[1], 1) === Infinity) return false;
+  if (s.pawns.some((pawn, index) => distanceToGoal(next, pawn, index) === Infinity)) return false;
   return true;
 }
 
@@ -174,13 +183,13 @@ export function applyMove(s: GameState, to: Pos): GameState {
   const player = s.turn;
   if (s.winner !== null) return s;
   if (!legalMoves(s, player).some((p) => samePos(p, to))) return s;
-  const pawns: [Pos, Pos] = [{ ...s.pawns[0] }, { ...s.pawns[1] }];
+  const pawns = s.pawns.map((pawn) => ({ ...pawn }));
   pawns[player] = to;
-  const winner = to.r === goalRow(player) ? player : null;
+  const winner = hasReachedGoal(player, to) ? player : null;
   return {
     ...s,
     pawns,
-    turn: (player === 0 ? 1 : 0) as 0 | 1,
+    turn: (player + 1) % s.pawns.length,
     winner,
     moveCount: s.moveCount + 1,
     history: [...s.history, notate(to)],
@@ -190,21 +199,21 @@ export function applyMove(s: GameState, to: Pos): GameState {
 export function applyWall(s: GameState, w: Wall): GameState {
   const player = s.turn;
   if (!canPlaceWall(s, w, player)) return s;
-  const wallsLeft: [number, number] = [s.wallsLeft[0], s.wallsLeft[1]];
-  wallsLeft[player] -= 1;
+  const wallsLeft = [...s.wallsLeft];
+  wallsLeft[player] = wallsLeft[player]! - 1;
   return {
     ...s,
     walls: [...s.walls, w],
     wallsLeft,
-    turn: (player === 0 ? 1 : 0) as 0 | 1,
+    turn: (player + 1) % s.pawns.length,
     moveCount: s.moveCount + 1,
     history: [...s.history, `${w.o}${COLS[w.c]}${N - 1 - w.r}`],
   };
 }
 
-export function legalWalls(s: GameState, player: 0 | 1): Wall[] {
+export function legalWalls(s: GameState, player: number): Wall[] {
   const out: Wall[] = [];
-  if (s.wallsLeft[player] <= 0) return out;
+  if (s.wallsLeft[player]! <= 0) return out;
   for (let r = 0; r < N - 1; r++)
     for (let c = 0; c < N - 1; c++)
       for (const o of ["h", "v"] as Orient[]) {

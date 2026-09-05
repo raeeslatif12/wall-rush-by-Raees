@@ -15,11 +15,11 @@ export type Action = { type: "move"; to: Pos } | { type: "wall"; wall: Wall };
 
 function evaluate(s: GameState, me: 0 | 1): number {
   const opp = (me === 0 ? 1 : 0) as 0 | 1;
-  const dMe = distanceToGoal(s.walls, s.pawns[me], me);
-  const dOpp = distanceToGoal(s.walls, s.pawns[opp], opp);
+  const dMe = distanceToGoal(s.walls, s.pawns[me]!, me);
+  const dOpp = distanceToGoal(s.walls, s.pawns[opp]!, opp);
   if (dMe === 0) return 1000;
   if (dOpp === 0) return -1000;
-  const wallBonus = (s.wallsLeft[me] - s.wallsLeft[opp]) * 0.6;
+  const wallBonus = (s.wallsLeft[me]! - s.wallsLeft[opp]!) * 0.6;
   return (dOpp - dMe) * 3 + wallBonus;
 }
 
@@ -30,12 +30,12 @@ function apply(s: GameState, a: Action): GameState {
 /** Walls worth considering: those that lengthen the opponent's path most. */
 function candidateWalls(s: GameState, me: 0 | 1, limit: number): Wall[] {
   const opp = (me === 0 ? 1 : 0) as 0 | 1;
-  const base = distanceToGoal(s.walls, s.pawns[opp], opp);
-  const myBase = distanceToGoal(s.walls, s.pawns[me], me);
+  const base = distanceToGoal(s.walls, s.pawns[opp]!, opp);
+  const myBase = distanceToGoal(s.walls, s.pawns[me]!, me);
   const scored = legalWalls(s, me).map((w) => {
     const walls = [...s.walls, w];
-    const d = distanceToGoal(walls, s.pawns[opp], opp);
-    const dm = distanceToGoal(walls, s.pawns[me], me);
+    const d = distanceToGoal(walls, s.pawns[opp]!, opp);
+    const dm = distanceToGoal(walls, s.pawns[me]!, me);
     return { w, score: d - base - (dm - myBase) * 1.2 };
   });
   scored.sort((a, b) => b.score - a.score);
@@ -99,9 +99,9 @@ export function chooseAction(s: GameState, me: 0 | 1, difficulty: Difficulty): A
 
   if (difficulty === "normal") {
     const opp = (me === 0 ? 1 : 0) as 0 | 1;
-    const dMe = distanceToGoal(s.walls, s.pawns[me], me);
-    const dOpp = distanceToGoal(s.walls, s.pawns[opp], opp);
-    if (dOpp < dMe && s.wallsLeft[me] > 0 && Math.random() < 0.6) {
+    const dMe = distanceToGoal(s.walls, s.pawns[me]!, me);
+    const dOpp = distanceToGoal(s.walls, s.pawns[opp]!, opp);
+    if (dOpp < dMe && s.wallsLeft[me]! > 0 && Math.random() < 0.6) {
       const w = candidateWalls(s, me, 4);
       if (w.length) return { type: "wall", wall: w[0]! };
     }

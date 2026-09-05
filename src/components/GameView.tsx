@@ -65,8 +65,8 @@ export default function GameView({
   const elapsed = clocks && clocks.running ? (now - clocks.lastMoveAt) / 1000 : 0;
   const left: [number, number] = clocks
     ? [
-        clocks.base[0] - (state.turn === 0 ? elapsed : 0),
-        clocks.base[1] - (state.turn === 1 ? elapsed : 0),
+        clocks.base[0]! - (state.turn === 0 ? elapsed : 0),
+        clocks.base[1]! - (state.turn === 1 ? elapsed : 0),
       ]
     : [0, 0];
 
@@ -93,9 +93,9 @@ export default function GameView({
       </div>
 
       <div className="card-surface mb-3 flex items-center justify-between p-3">
-        <Seat name={oppName} walls={state.wallsLeft[oppSeat]} time={clocks ? fmt(left[oppSeat]) : null} active={state.turn === oppSeat} color="p2" emoji={emote?.seat === oppSeat ? emote.emoji : null} />
+        <Seat name={oppName} walls={state.wallsLeft[oppSeat]!} time={clocks ? fmt(left[oppSeat]!) : null} active={state.turn === oppSeat} color="p2" emoji={emote?.seat === oppSeat ? emote.emoji : null} />
         <span className="px-2 text-xs font-bold text-muted-foreground">VS</span>
-        <Seat name={myName} walls={state.wallsLeft[mySeat]} time={clocks ? fmt(left[mySeat]) : null} active={state.turn === mySeat} color="p1" emoji={emote?.seat === mySeat ? emote.emoji : null} right />
+        <Seat name={myName} walls={state.wallsLeft[mySeat]!} time={clocks ? fmt(left[mySeat]!) : null} active={state.turn === mySeat} color="p1" emoji={emote?.seat === mySeat ? emote.emoji : null} right />
       </div>
 
       <p className="mb-2 text-center text-xs font-semibold text-muted-foreground">
@@ -108,6 +108,7 @@ export default function GameView({
         interactive={myTurn}
         mode={mode}
         orient={orient}
+        flipped={mySeat === 1}
         onMove={(p) => {
           onMove(p);
           setMode("move");

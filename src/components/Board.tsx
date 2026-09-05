@@ -37,9 +37,7 @@ export default function Board({ state, me, interactive, mode, orient, flipped, o
       const pos = { r, c };
       const isMove = moves.some((m) => samePos(m, pos));
       const isGoal = r === 0 || r === N - 1;
-      const p0 = samePos(state.pawns[0], pos);
-      const p1 = samePos(state.pawns[1], pos);
-      const pawnSeat = p0 ? 0 : 1;
+      const pawnSeat = state.pawns.findIndex((pawn) => samePos(pawn, pos));
       cells.push(
         <button
           key={`c${r}-${c}`}
@@ -57,7 +55,7 @@ export default function Board({ state, me, interactive, mode, orient, flipped, o
           {isMove && (
             <span className="absolute left-1/2 top-1/2 h-[26%] w-[26%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/50" />
           )}
-          {(p0 || p1) && (
+          {pawnSeat >= 0 && (
             <span
               className={[
                 "absolute left-1/2 top-1/2 h-[74%] w-[74%] -translate-x-1/2 -translate-y-1/2 rounded-full shadow-[0_2px_6px_rgba(0,0,0,0.25)]",
