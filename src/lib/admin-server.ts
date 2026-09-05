@@ -4,13 +4,15 @@ import { createHash } from "node:crypto";
 import { jwtVerify, SignJWT } from "jose";
 
 const sql = process.env["DATABASE_URL"] ? neon(process.env["DATABASE_URL"]!) : null;
-const adminSecret = new TextEncoder().encode(process.env["ADMIN_JWT_SECRET"] ?? process.env["JWT_SECRET"] ?? "development-only-admin-secret");
+const adminSecretValue = process.env["ADMIN_JWT_SECRET"] ?? process.env["JWT_SECRET"] ?? (process.env["NODE_ENV"] === "production" ? null : "development-only-admin-secret");
+if (!adminSecretValue) throw new Error("ADMIN_JWT_SECRET or JWT_SECRET must be configured in production.");
+const adminSecret = new TextEncoder().encode(adminSecretValue);
 let adminSchemaPromise: Promise<void> | null = null;
 
 function json(body: unknown, status = 200, headers: Record<string, string> = {}) { return Response.json(body, { status, headers }); }
 function fail(message: string, status = 400) { return json({ error: message }, status); }
 function cookies(request: Request) { return Object.fromEntries((request.headers.get("cookie") ?? "").split(";").filter(Boolean).map((part) => { const [key, ...value] = part.trim().split("="); return [key, value.join("=")]; })); }
-function cookie(value: string, maxAge: number) { return `admin_session=${value}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`; }
+function cookie(value: string, maxAge: number) { const secure = process.env["NODE_ENV"] === "production" ? "; Secure" : ""; return `admin_session=${value}; HttpOnly${secure}; SameSite=Strict; Path=/; Max-Age=${maxAge}`; }
 async function body(request: Request): Promise<any> { try { return await request.json(); } catch { return null; } }
 function text(value: unknown, max = 120) { return typeof value === "string" && value.trim() && value.length <= max ? value.trim() : null; }
 function adminUsername(value: unknown) { const username = text(value, 40); return username && username.length >= 3 && /^[a-zA-Z0-9_. -]+$/.test(username) ? username : null; }

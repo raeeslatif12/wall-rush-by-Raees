@@ -7,7 +7,9 @@ import { applyMove, applyWall, type Pos, type Wall } from "./quoridor";
 const databaseUrl = process.env["DATABASE_URL"];
 const jwtSecret = process.env["JWT_SECRET"];
 const sql = databaseUrl ? neon(databaseUrl) : null;
-const secret = new TextEncoder().encode(jwtSecret ?? "development-only-change-me");
+const secretValue = jwtSecret ?? (process.env["NODE_ENV"] === "production" ? null : "development-only-change-me");
+if (!secretValue) throw new Error("JWT_SECRET must be configured in production.");
+const secret = new TextEncoder().encode(secretValue);
 let schemaPromise: Promise<void> | null = null;
 
 type User = { id: string; email: string; username: string; points: number; games: number; wins: number; losses: number; streak: number; last_played: string | null; disabled?: boolean; last_active_at?: string | null };
@@ -19,7 +21,7 @@ function response(body: unknown, status = 200, headers: Record<string, string> =
   return Response.json(body, { status, headers });
 }
 function error(message: string, status = 400) { return response({ error: message }, status); }
-function cookieHeader(token: string, maxAge: number) { return `wallrush_session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAge}`; }
+function cookieHeader(token: string, maxAge: number) { const secure = process.env["NODE_ENV"] === "production" ? "; Secure" : ""; return `wallrush_session=${token}; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=${maxAge}`; }
 function cookies(request: Request) { return Object.fromEntries((request.headers.get("cookie") ?? "").split(";").filter(Boolean).map((part) => { const [key, ...value] = part.trim().split("="); return [key, value.join("=")]; })); }
 async function body(request: Request): Promise<any> { try { return await request.json(); } catch { return null; } }
 function text(value: unknown, max = 80) { return typeof value === "string" && value.trim().length > 0 && value.length <= max ? value.trim() : null; }
