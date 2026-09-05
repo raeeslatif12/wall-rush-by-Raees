@@ -407,7 +407,7 @@ function AdminLogin({
 }
 
 function GameSettingsPanel() {
-  const [wallsPerPlayer, setWallsPerPlayer] = useState(10);
+  const [wallsPerPlayer, setWallsPerPlayer] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -416,6 +416,7 @@ function GameSettingsPanel() {
   }, []);
 
   async function save() {
+    if (wallsPerPlayer === null) return;
     setBusy(true);
     setMessage("");
     try {
@@ -441,10 +442,10 @@ function GameSettingsPanel() {
       <div className="admin-form-grid">
         <label>
           <span>Walls per player</span>
-          <input type="number" min={1} max={50} value={wallsPerPlayer} onChange={(event) => setWallsPerPlayer(Number(event.target.value))} />
+          <input type="number" min={1} max={50} value={wallsPerPlayer ?? ""} onChange={(event) => setWallsPerPlayer(event.target.value === "" ? null : Number(event.target.value))} />
         </label>
       </div>
-      <button type="button" className="admin-primary" onClick={() => void save()} disabled={busy || !Number.isInteger(wallsPerPlayer) || wallsPerPlayer < 1 || wallsPerPlayer > 50}>
+      <button type="button" className="admin-primary" onClick={() => void save()} disabled={busy || wallsPerPlayer === null || !Number.isInteger(wallsPerPlayer) || wallsPerPlayer < 1 || wallsPerPlayer > 50}>
         {busy ? "Saving..." : "Save game settings"}
       </button>
       {message && <p className={message.startsWith("Saved") ? "admin-success" : "admin-error"}>{message}</p>}

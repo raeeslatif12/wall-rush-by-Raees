@@ -26,7 +26,7 @@ async function ensureAdminSchema() {
     await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS walls_per_player integer`;
     await sql`CREATE TABLE IF NOT EXISTS admins (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), username text NOT NULL UNIQUE, password_hash text NOT NULL, role text NOT NULL DEFAULT 'admin' CHECK (role IN ('admin', 'super_admin')), created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
     await sql`CREATE TABLE IF NOT EXISTS game_settings (key text PRIMARY KEY, value integer NOT NULL)`;
-    await sql`INSERT INTO game_settings (key,value) VALUES ('walls_per_player',10) ON CONFLICT (key) DO NOTHING`;
+    await sql`INSERT INTO game_settings (key,value) VALUES ('walls_per_player',12) ON CONFLICT (key) DO UPDATE SET value=CASE WHEN game_settings.value=10 THEN EXCLUDED.value ELSE game_settings.value END`;
     await sql`ALTER TABLE admins ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'admin'`;
     await sql`UPDATE admins SET role='admin' WHERE role IS NULL OR role NOT IN ('admin', 'super_admin')`;
     await sql`CREATE UNIQUE INDEX IF NOT EXISTS admins_username_lower_idx ON admins (lower(username))`;
@@ -89,7 +89,7 @@ export async function handleAdminApi(request: Request): Promise<Response | null>
     if (url.pathname === "/api/admin/session" && request.method === "GET") return json({ admin: actor });
     if (url.pathname === "/api/admin/game-settings" && request.method === "GET") {
       const rows = await sql`SELECT value FROM game_settings WHERE key='walls_per_player'`;
-      return json({ settings: { wallsPerPlayer: Number(rows[0]?.value ?? 10) } });
+      return json({ settings: { wallsPerPlayer: Number(rows[0]?.value ?? 12) } });
     }
     if (url.pathname === "/api/admin/game-settings" && request.method === "PATCH") {
       const input = await body(request);

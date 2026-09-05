@@ -27,7 +27,7 @@ function VsAI() {
   const app = useApp();
   const [difficulty, setDifficulty] = useState<Difficulty | null>(null);
   const [state, setState] = useState<GameState>(() => initialState());
-  const [wallsPerPlayer, setWallsPerPlayer] = useState(10);
+  const [wallsPerPlayer, setWallsPerPlayer] = useState<number | null>(null);
   const [thinking, setThinking] = useState(false);
   const [resigned, setResigned] = useState(false);
   const recorded = useRef(false);
@@ -42,8 +42,8 @@ function VsAI() {
   }, [app.profile?.walls_per_player]);
 
   const reset = useCallback(() => {
-    const inventory = { h: Math.ceil(wallsPerPlayer / 2), v: Math.floor(wallsPerPlayer / 2) };
-    setState({ ...initialState(), wallsLeft: [{ ...inventory }, { ...inventory }] });
+    if (wallsPerPlayer === null) return;
+    setState(initialState(wallsPerPlayer));
     setResigned(false);
     recorded.current = false;
   }, [wallsPerPlayer]);

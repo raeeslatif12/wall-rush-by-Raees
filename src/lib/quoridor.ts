@@ -22,14 +22,16 @@ export interface GameState {
   history: string[];
 }
 
-export function initialState(): GameState {
+export function initialState(wallsPerPlayer = 0): GameState {
+  const horizontal = Math.ceil(wallsPerPlayer / 2);
+  const vertical = Math.floor(wallsPerPlayer / 2);
   return {
     pawns: [
       { r: 8, c: 4 },
       { r: 0, c: 4 },
     ],
     walls: [],
-    wallsLeft: [{ h: 5, v: 5 }, { h: 5, v: 5 }],
+    wallsLeft: [{ h: horizontal, v: vertical }, { h: horizontal, v: vertical }],
     turn: 0,
     winner: null,
     moveCount: 0,
