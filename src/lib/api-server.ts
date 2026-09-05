@@ -155,7 +155,9 @@ export async function handleApi(request: Request): Promise<Response | null> {
     }
     if (path === "/api/game-config" && request.method === "GET") {
       const rows = await sql`SELECT value FROM game_settings WHERE key='walls_per_player'`;
-      return response({ wallsPerPlayer: Number(rows[0]?.["value"] ?? DEFAULT_WALLS_PER_PLAYER) }, 200, { "cache-control": "no-store" });
+      const defaultCount = Number(rows[0]?.["value"] ?? DEFAULT_WALLS_PER_PLAYER);
+      const user = await sessionUser(request);
+      return response({ wallsPerPlayer: user?.walls_per_player ?? defaultCount }, 200, { "cache-control": "no-store" });
     }
     if (path === "/api/social-links" && request.method === "GET") {
       const rows = await sql`SELECT id,label,url,icon,position FROM social_links WHERE enabled=true ORDER BY position ASC,label ASC`;
