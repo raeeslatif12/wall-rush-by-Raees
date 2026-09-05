@@ -33,12 +33,13 @@ function VsAI() {
   const recorded = useRef(false);
 
   useEffect(() => {
-    void api.gameConfig().then(({ wallsPerPlayer: count }) => {
+    const profileCount = app.profile?.walls_per_player;
+    void (profileCount !== null && profileCount !== undefined ? Promise.resolve({ wallsPerPlayer: profileCount }) : api.gameConfig()).then(({ wallsPerPlayer: count }) => {
       setWallsPerPlayer(count);
       const inventory = { h: Math.ceil(count / 2), v: Math.floor(count / 2) };
       setState((current) => current.moveCount === 0 ? { ...current, wallsLeft: [{ ...inventory }, { ...inventory }] } : current);
     }).catch(() => {});
-  }, []);
+  }, [app.profile?.walls_per_player]);
 
   const reset = useCallback(() => {
     const inventory = { h: Math.ceil(wallsPerPlayer / 2), v: Math.floor(wallsPerPlayer / 2) };

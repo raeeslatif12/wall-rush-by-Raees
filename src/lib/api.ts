@@ -10,6 +10,7 @@ export interface ApiUser {
   wins: number;
   losses: number;
   streak: number;
+  walls_per_player: number | null;
   last_played: string | null;
 }
 

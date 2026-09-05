@@ -27,7 +27,7 @@ function cookies(request: Request) { return Object.fromEntries((request.headers.
 async function body(request: Request): Promise<any> { try { return await request.json(); } catch { return null; } }
 function text(value: unknown, max = 80) { return typeof value === "string" && value.trim().length > 0 && value.length <= max ? value.trim() : null; }
 function email(value: unknown) { const result = text(value, 254)?.toLowerCase(); return result && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result) ? result : null; }
-function serializeUser(row: User) { return { id: row.id, email: row.email, username: row.username, points: row.points, games: row.games, wins: row.wins, losses: row.losses, streak: row.streak, last_played: row.last_played }; }
+function serializeUser(row: User) { return { id: row.id, email: row.email, username: row.username, points: row.points, games: row.games, wins: row.wins, losses: row.losses, streak: row.streak, walls_per_player: row.walls_per_player ?? null, last_played: row.last_played }; }
 async function sessionUser(request: Request): Promise<User | null> {
   const token = cookies(request).wallrush_session;
   if (!token || !sql) return null;
@@ -175,7 +175,7 @@ export async function handleApi(request: Request): Promise<Response | null> {
     if (path === "/api/auth/login" && request.method === "POST") {
       const input = await body(request); const userEmail = email(input?.email); const password = typeof input?.password === "string" ? input.password : "";
       if (!userEmail || !password) return error("Email and password are required.");
-      const rows = await sql`SELECT id,email,username,password_hash,points,games,wins,losses,streak,last_played,disabled,last_active_at FROM users WHERE email=${userEmail} LIMIT 1`; const user = rows[0] as (User & { password_hash: string }) | undefined;
+      const rows = await sql`SELECT id,email,username,password_hash,points,games,wins,losses,streak,walls_per_player,last_played,disabled,last_active_at FROM users WHERE email=${userEmail} LIMIT 1`; const user = rows[0] as (User & { password_hash: string }) | undefined;
       if (!user || !(await compare(password, user.password_hash))) return error("Email or password is incorrect.", 401);
       if (user.disabled) return error("This account is disabled.", 403);
       const token = await issueSession(user); return response({ user: serializeUser(user) }, 200, { "Set-Cookie": cookieHeader(token, 60 * 60 * 24 * 30) });
