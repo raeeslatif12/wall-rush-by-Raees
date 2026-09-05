@@ -1163,6 +1163,7 @@ function UserDrawer({
   const [points, setPoints] = useState(String(user.points));
   const [wins, setWins] = useState(String(user.wins));
   const [losses, setLosses] = useState(String(user.losses));
+  const [wallsPerPlayer, setWallsPerPlayer] = useState(user.walls_per_player === null ? "" : String(user.walls_per_player));
   const [disabled, setDisabled] = useState(user.disabled);
   const [password, setPassword] = useState("");
   return (
@@ -1211,6 +1212,17 @@ function UserDrawer({
               onChange={(event) => setLosses(event.target.value)}
             />
           </label>
+          <label>
+            Walls per player
+            <input
+              type="number"
+              min={1}
+              max={50}
+              placeholder="Global default"
+              value={wallsPerPlayer}
+              onChange={(event) => setWallsPerPlayer(event.target.value)}
+            />
+          </label>
           <label className="wide">
             Reset password
             <input
@@ -1242,6 +1254,7 @@ function UserDrawer({
                 points: Number(points),
                 wins: Number(wins),
                 losses: Number(losses),
+                walls_per_player: wallsPerPlayer === "" ? null : Number(wallsPerPlayer),
                 disabled,
                 ...(password ? { password } : {}),
               })

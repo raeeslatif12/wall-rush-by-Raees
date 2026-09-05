@@ -71,12 +71,8 @@ export default function GameView({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") cancelDrag();
     };
-    window.addEventListener("pointerup", cancelDrag);
-    window.addEventListener("pointercancel", cancelDrag);
     window.addEventListener("keydown", onKeyDown);
     return () => {
-      window.removeEventListener("pointerup", cancelDrag);
-      window.removeEventListener("pointercancel", cancelDrag);
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [draggingOrient]);
@@ -140,6 +136,10 @@ export default function GameView({
           onMove(p);
         }}
         onPreview={setPreview}
+        onCancel={() => {
+          setDraggingOrient(null);
+          setPreview(null);
+        }}
         onDrop={(w) => { onWall(w); setDraggingOrient(null); setPreview(null); }}
       />
 

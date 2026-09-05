@@ -8,6 +8,7 @@ export interface RoomState {
   rematch?: [boolean, boolean];
   resignedBy?: 0 | 1 | null;
   resignedAt?: number | null;
+  wallLimits?: [number | null, number | null];
 }
 
 export interface Room {

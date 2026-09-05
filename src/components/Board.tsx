@@ -1,4 +1,4 @@
-import { useMemo, useRef, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { N, type GameState, type Orient, type Pos, type Wall, canPlaceWall, legalMoves, samePos } from "@/lib/quoridor";
 
 interface Props {
@@ -14,6 +14,7 @@ interface Props {
   onMove: (p: Pos) => void;
   onPreview?: (w: Wall | null) => void;
   onDrop?: (w: Wall) => void;
+  onCancel?: () => void;
   onWall?: (w: Wall) => void;
 }
 
@@ -29,28 +30,51 @@ function template() {
   return parts.join(" ");
 }
 
-export default function Board({ state, me, interactive, draggingOrient, preview, flipped, onMove, onPreview, onDrop }: Props) {
+export default function Board({ state, me, interactive, draggingOrient, preview, flipped, onMove, onPreview, onDrop, onCancel }: Props) {
   const boardRef = useRef<HTMLDivElement>(null);
-  const dragPointerId = useRef<number | null>(null);
   const moves = useMemo(
     () => (interactive && !draggingOrient && state.winner === null ? legalMoves(state, me) : []),
     [state, me, interactive, draggingOrient],
   );
 
-  function wallAtPoint(event: PointerEvent<HTMLDivElement>): Wall | null {
+  function wallAtPoint(event: Pick<globalThis.PointerEvent, "clientX" | "clientY">): Wall | null {
     if (!draggingOrient || !boardRef.current) return null;
     const rect = boardRef.current.getBoundingClientRect();
-    let x = (event.clientX - rect.left) / rect.width;
-    let y = (event.clientY - rect.top) / rect.height;
-    if (flipped) { x = 1 - x; y = 1 - y; }
-    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
-    const gap = 10 / rect.width;
-    const cell = (1 - 8 * gap) / 9;
+    const padding = 8;
+    const gap = 10;
+    let x = event.clientX - rect.left;
+    let y = event.clientY - rect.top;
+    if (flipped) { x = rect.width - x; y = rect.height - y; }
+    x -= padding;
+    y -= padding;
+    const innerWidth = rect.width - padding * 2;
+    const innerHeight = rect.height - padding * 2;
+    const cell = (innerWidth - 8 * gap) / 9;
+    if (x < 0 || x > innerWidth || y < 0 || y > innerHeight || cell <= 0) return null;
     const c = Math.round((x - cell - gap / 2) / (cell + gap));
     const r = Math.round((y - cell - gap / 2) / (cell + gap));
     if (r < 0 || r > 7 || c < 0 || c > 7) return null;
     return { r, c, o: draggingOrient };
   }
+
+  useEffect(() => {
+    if (!draggingOrient) return;
+    const handleMove = (event: globalThis.PointerEvent) => onPreview?.(wallAtPoint(event));
+    const handleEnd = (event: globalThis.PointerEvent) => {
+      const wall = wallAtPoint(event);
+      if (wall && canPlaceWall(state, wall, me)) onDrop?.(wall);
+      else onCancel?.();
+    };
+    const handleCancel = () => onCancel?.();
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleEnd);
+    window.addEventListener("pointercancel", handleCancel);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleEnd);
+      window.removeEventListener("pointercancel", handleCancel);
+    };
+  }, [draggingOrient, flipped, me, onCancel, onDrop, onPreview, state]);
 
   const cells = [];
   for (let r = 0; r < N; r++) {
@@ -114,29 +138,7 @@ export default function Board({ state, me, interactive, draggingOrient, preview,
       {cells}
       {wallEls}
       {preview && <div className={`pointer-events-none z-30 rounded-[3px] ${canPlaceWall(state, preview, me) ? "bg-blue-600/70" : "bg-destructive/70"}`} style={preview.o === "h" ? { gridRow: 2 * preview.r + 2, gridColumn: `${2 * preview.c + 1} / span 3`, height: "55%", alignSelf: "center" } : { gridColumn: 2 * preview.c + 2, gridRow: `${2 * preview.r + 1} / span 3`, width: "55%", justifySelf: "center" }} />}
-      {draggingOrient && <div
-        className="absolute inset-0 z-40"
-        onPointerDown={(event) => {
-          dragPointerId.current = event.pointerId;
-          event.currentTarget.setPointerCapture(event.pointerId);
-          onPreview?.(wallAtPoint(event));
-        }}
-        onPointerMove={(event) => {
-          onPreview?.(wallAtPoint(event));
-        }}
-        onPointerUp={(event) => {
-          const wall = wallAtPoint(event);
-          dragPointerId.current = null;
-          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-          if (wall && canPlaceWall(state, wall, me)) onDrop?.(wall);
-        }}
-        onPointerCancel={(event) => {
-          if (dragPointerId.current === event.pointerId) {
-            dragPointerId.current = null;
-            onPreview?.(null);
-          }
-        }}
-      />}
+      {draggingOrient && <div className="pointer-events-none absolute inset-0 z-40" />}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 export type AdminRole = "admin" | "super_admin";
 export interface AdminIdentity { id: string; username: string; role: AdminRole }
 export interface AdminAccount { id: string; username: string; role: AdminRole; created_at: string }
-export interface AdminUser { id: string; email: string; username: string; points: number; games: number; wins: number; losses: number; streak: number; disabled: boolean; created_at: string; last_active_at: string | null; rank?: number; match_count?: number }
+export interface AdminUser { id: string; email: string; username: string; points: number; games: number; wins: number; losses: number; streak: number; disabled: boolean; walls_per_player: number | null; created_at: string; last_active_at: string | null; rank?: number; match_count?: number }
 export interface SocialLink { id: string; label: string; url: string; icon: string; enabled: boolean; position: number; created_at: string; updated_at: string }
 export interface GameSettings { wallsPerPlayer: number }
 
