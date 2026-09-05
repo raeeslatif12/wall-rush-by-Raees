@@ -537,3 +537,90 @@
 .admin-notification-empty { margin: 0; padding: 24px 16px; color: var(--admin-muted); font-size: 12px; text-align: center; }
 .admin-notification-view { width: 100%; display: flex; align-items: center; justify-content: center; gap: 5px; border: 0; border-top: 1px solid var(--admin-border); padding: 11px 16px; background: var(--admin-panel-raised); color: #287b84; cursor: pointer; font: 800 11px/1 ui-sans-serif, system-ui, sans-serif; }
 @keyframes admin-notification-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+@media (max-width: 900px) and (min-width: 761px) {
+  .admin-sidebar { width: 220px; flex-basis: 220px; padding-inline: 10px; overflow-y: auto; }
+  .admin-brand { justify-content: flex-start; padding-inline: 8px; }
+  .admin-brand-copy, .admin-secure span:not(.admin-live-dot), .admin-nav-group > p, .admin-nav button span, .admin-identity span, .admin-logout span { display: block; }
+  .admin-sidebar-collapse { margin-left: auto; }
+  .admin-secure { display: block; padding: 8px 9px; }
+  .admin-nav button { justify-content: flex-start; padding-inline: 11px; }
+  .admin-sidebar-foot { display: block; }
+  .admin-main { width: 0; padding-inline: 22px; }
+}
+
+/* Final sidebar layout contract: full navigation on desktop/tablet, drawer on mobile. */
+.admin-sidebar { min-height: 100vh; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: #6e8fa8 rgba(255,255,255,.1); }
+.admin-sidebar::-webkit-scrollbar { width: 8px; }
+.admin-sidebar::-webkit-scrollbar-track { background: rgba(255,255,255,.08); border-radius: 999px; }
+.admin-sidebar::-webkit-scrollbar-thumb { background: #6e8fa8; border: 2px solid transparent; border-radius: 999px; background-clip: padding-box; }
+.admin-sidebar::-webkit-scrollbar-thumb:hover { background: #9bc2d8; background-clip: padding-box; }
+.admin-shell[data-theme="light"] .admin-sidebar { scrollbar-color: #8aa2b6 #e8eef4; }
+.admin-shell[data-theme="light"] .admin-sidebar::-webkit-scrollbar-track { background: #e8eef4; }
+.admin-shell[data-theme="light"] .admin-sidebar::-webkit-scrollbar-thumb { background: #8aa2b6; background-clip: padding-box; }
+.admin-shell[data-theme="light"] .admin-sidebar::-webkit-scrollbar-thumb:hover { background: #52758e; background-clip: padding-box; }
+.admin-nav { min-width: 0; }
+.admin-nav button { min-width: 0; }
+@media (min-width: 901px) {
+  .admin-sidebar { width: 252px; flex-basis: 252px; }
+  .admin-main { min-width: 0; flex: 1 1 auto; }
+}
+@media (max-width: 900px) and (min-width: 761px) {
+  .admin-sidebar { width: 232px; flex-basis: 232px; }
+  .admin-main { min-width: 0; flex: 1 1 auto; padding-inline: 20px; }
+  .admin-topbar-actions { max-width: 360px; }
+}
+@media (max-width: 760px) {
+  .admin-sidebar { width: min(86vw, 296px); min-height: 100dvh; overflow-y: auto; }
+  .admin-main { width: 100%; min-width: 0; }
+  .admin-topbar-actions { max-width: none; }
+}
+
+@media (max-width: 760px) {
+  .admin-shell { display: block; min-height: 100dvh; overflow-x: hidden; }
+  .admin-sidebar { position: fixed; inset: 0 auto 0 0; z-index: 50; padding: 18px 14px 20px; transform: translateX(-105%); transition: transform .22s ease; box-shadow: 18px 0 45px rgba(9, 25, 40, .22); }
+  .admin-shell.mobile-nav-open .admin-sidebar { transform: translateX(0); }
+  .admin-shell.mobile-nav-open .admin-mobile-backdrop { display: block; position: fixed; inset: 0; z-index: 40; background: rgba(8, 24, 38, .48); }
+  .admin-brand { padding: 0 8px 20px; }
+  .admin-secure { margin: 0 4px 18px; }
+  .admin-nav { gap: 16px; }
+  .admin-nav button { min-height: 44px; padding: 11px 12px; border-radius: 10px; font-size: 12px; }
+  .admin-sidebar-foot { margin-top: auto; }
+  .admin-main { padding: 14px 12px 32px; }
+  .admin-topbar { position: relative; display: block; min-height: 0; margin: 0 -12px 18px; padding: 14px 12px 16px; background: color-mix(in srgb, var(--admin-panel) 94%, transparent); border-bottom: 1px solid var(--admin-border); }
+  .admin-title-block { align-items: center; gap: 10px; }
+  .admin-mobile-menu { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; padding: 0; border: 1px solid var(--admin-border); border-radius: 11px; }
+  .admin-breadcrumb { margin-bottom: 5px; font-size: 9px; }
+  .admin-topbar h1 { font-size: 23px; line-height: 1.1; }
+  .admin-topbar-subtitle { margin-top: 4px; font-size: 11px; }
+  .admin-topbar-actions { display: grid; grid-template-columns: 42px 1fr 1fr; gap: 7px; width: 100%; margin-top: 14px; }
+  .admin-topbar-actions > button, .admin-notification-wrap > button { min-height: 42px; }
+  .admin-theme-toggle, .admin-refresh { padding: 9px 8px; font-size: 11px; }
+  .admin-notification-menu { position: fixed; top: 78px; right: 12px; width: min(360px, calc(100vw - 24px)); }
+  .admin-overview-hero { margin-bottom: 12px; padding: 18px; border-radius: 14px; }
+  .admin-overview-hero h2 { font-size: 20px; }
+  .admin-hero-rail { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin-top: 16px; }
+  .admin-hero-rail strong { font-size: 18px; }
+  .admin-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .admin-insight-grid, .admin-chart-grid, .admin-admin-grid { grid-template-columns: 1fr; gap: 10px; }
+  .admin-kpi { min-height: 116px; padding: 13px; border-radius: 13px; }
+  .admin-kpi-icon { top: 13px; left: 13px; width: 30px; height: 30px; }
+  .admin-kpi strong { font-size: 22px; }
+  .admin-kpi-caption { display: none; }
+  .admin-section { margin-top: 10px; padding: 15px; border-radius: 13px; }
+  .admin-section-head { align-items: flex-start; gap: 10px; margin-bottom: 14px; }
+  .admin-section h2 { font-size: 16px; }
+  .admin-table-wrap { margin-inline: -15px; padding-inline: 15px; }
+  .admin-table { min-width: 650px; }
+  .admin-search { width: 100%; min-height: 42px; }
+  .admin-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-stat { padding: 11px 10px; }
+  .admin-stat strong { font-size: 17px; }
+  .admin-insight { margin-top: 0; padding: 14px; }
+  .admin-chart-card { padding: 14px; }
+  .admin-form-grid { grid-template-columns: 1fr; }
+  .admin-form-grid label.wide { grid-column: auto; }
+  .admin-links-layout { grid-template-columns: 1fr; gap: 10px; }
+  .admin-link-row { grid-template-columns: 36px minmax(0, 1fr) 32px; }
+  .admin-match-modal { padding: 16px; border-radius: 14px 14px 0 0; }
+}
