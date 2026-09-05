@@ -53,6 +53,7 @@ export default function GameView({
 }: Props) {
   const [draggingOrient, setDraggingOrient] = useState<Orient | null>(null);
   const [preview, setPreview] = useState<Wall | null>(null);
+  const [confirmingResign, setConfirmingResign] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -98,7 +99,7 @@ export default function GameView({
   function beginDrag(orient: Orient, event: React.PointerEvent<HTMLButtonElement>) {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     const inventory = state.wallsLeft[mySeat] as { h: number; v: number } | number | undefined;
-    const available = typeof inventory === "number" ? inventory > 0 : inventory?.[orient] > 0;
+    const available = typeof inventory === "number" ? inventory > 0 : (inventory?.[orient] ?? 0) > 0;
     if (myTurn && available) setDraggingOrient(orient);
   }
 
@@ -110,7 +111,7 @@ export default function GameView({
         </Link>
         <button
           type="button"
-          onClick={() => { if (window.confirm("Are you sure you want to resign this match?")) onResign(); }}
+          onClick={() => setConfirmingResign(true)}
           disabled={!canResign}
           className="rounded-full bg-destructive/10 px-3 py-1.5 text-sm font-bold text-destructive"
         >
@@ -145,7 +146,7 @@ export default function GameView({
       <div className="mt-3 grid grid-cols-2 gap-3">
         {(["h", "v"] as Orient[]).map((orient) => {
           const inventory = state.wallsLeft[mySeat] as { h: number; v: number } | number | undefined;
-          const available = typeof inventory === "number" ? inventory > 0 : inventory?.[orient] > 0;
+          const available = typeof inventory === "number" ? inventory > 0 : (inventory?.[orient] ?? 0) > 0;
           return <button key={orient} type="button" disabled={!myTurn || !available} onPointerDown={(event) => beginDrag(orient, event)} className={`wall-inventory-piece ${orient} ${draggingOrient === orient ? "is-dragging" : ""}`} aria-label={`Drag ${orient === "h" ? "horizontal" : "vertical"} wall`}>
             <span className="wall-inventory-bar" />
             <span><strong>{orient === "h" ? "Horizontal" : "Vertical"}</strong><small>{available ? "Drag to place" : "Used"}</small></span>
@@ -175,6 +176,19 @@ export default function GameView({
           <span className="ml-2">last: {state.history[state.history.length - 1]}</span>
         )}
       </div>
+
+      {confirmingResign && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 px-6">
+          <div className="card-surface w-full max-w-xs p-6 text-center">
+            <p className="text-lg font-extrabold">Resign this match?</p>
+            <p className="mt-2 text-sm text-muted-foreground">Your opponent will win immediately.</p>
+            <div className="mt-5 flex gap-2">
+              <button type="button" onClick={() => setConfirmingResign(false)} className="flex-1 rounded-xl bg-muted px-4 py-3 text-sm font-bold">Cancel</button>
+              <button type="button" onClick={() => { setConfirmingResign(false); onResign(); }} className="flex-1 rounded-xl bg-destructive px-4 py-3 text-sm font-bold text-destructive-foreground">Resign match</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {result && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 px-6">

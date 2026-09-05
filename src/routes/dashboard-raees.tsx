@@ -303,6 +303,38 @@ function AdminDashboard() {
   );
 }
 
+function AdminNotifications({ notifications, onViewAll }: { notifications: any[]; onViewAll: () => void }) {
+  return (
+    <section className="admin-notification-menu" aria-label="Recent notifications">
+      <div className="admin-notification-head">
+        <div>
+          <strong>Notifications</strong>
+          <small>Recent admin activity</small>
+        </div>
+        <Bell size={16} />
+      </div>
+      <div className="admin-notification-list">
+        {notifications.length === 0 ? (
+          <p className="admin-notification-empty">You are all caught up.</p>
+        ) : (
+          notifications.map((item) => (
+            <div className="admin-notification-item" key={item.id}>
+              <span className="admin-notification-dot" />
+              <div>
+                <strong>{String(item.action ?? "System activity").replaceAll("_", " ")}</strong>
+                <small>{item.actor ?? "System"} · {date(item.created_at)}</small>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+      <button type="button" className="admin-notification-view" onClick={onViewAll}>
+        View audit log <ChevronRight size={14} />
+      </button>
+    </section>
+  );
+}
+
 function AdminLogin({
   onLogin,
   error,

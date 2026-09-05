@@ -91,7 +91,7 @@ export default function Board({ state, me, interactive, draggingOrient, preview,
   const wallEls = state.walls.map((w) => (
     <div
       key={`w${w.o}${w.r}-${w.c}`}
-      className={`pointer-events-none z-20 rounded-[3px] shadow-[0_2px_4px_rgba(0,0,0,0.22)] ${w.by === 1 ? "bg-red-500" : "bg-blue-600"}`}
+      className={`pointer-events-none z-20 rounded-[3px] shadow-[0_2px_4px_rgba(0,0,0,0.22)] ${w.by === undefined || w.by === me ? "bg-blue-600" : "bg-red-500"}`}
       style={
         w.o === "h"
           ? { gridRow: 2 * w.r + 2, gridColumn: `${2 * w.c + 1} / span 3`, height: "38%", alignSelf: "center" }
@@ -112,7 +112,7 @@ export default function Board({ state, me, interactive, draggingOrient, preview,
     >
       {cells}
       {wallEls}
-      {preview && <div className={`pointer-events-none z-30 rounded-[3px] ${canPlaceWall(state, preview, me) ? me === 1 ? "bg-red-500/70" : "bg-blue-600/70" : "bg-destructive/70"}`} style={preview.o === "h" ? { gridRow: 2 * preview.r + 2, gridColumn: `${2 * preview.c + 1} / span 3`, height: "55%", alignSelf: "center" } : { gridColumn: 2 * preview.c + 2, gridRow: `${2 * preview.r + 1} / span 3`, width: "55%", justifySelf: "center" }} />}
+      {preview && <div className={`pointer-events-none z-30 rounded-[3px] ${canPlaceWall(state, preview, me) ? "bg-blue-600/70" : "bg-destructive/70"}`} style={preview.o === "h" ? { gridRow: 2 * preview.r + 2, gridColumn: `${2 * preview.c + 1} / span 3`, height: "55%", alignSelf: "center" } : { gridColumn: 2 * preview.c + 2, gridRow: `${2 * preview.r + 1} / span 3`, width: "55%", justifySelf: "center" }} />}
       {draggingOrient && <div className="absolute inset-0 z-40" onPointerMove={(event) => onPreview?.(wallAtPoint(event))} onPointerLeave={() => onPreview?.(null)} onPointerUp={(event) => { const wall = wallAtPoint(event); if (wall && canPlaceWall(state, wall, me)) onDrop?.(wall); }} />}
     </div>
   );
