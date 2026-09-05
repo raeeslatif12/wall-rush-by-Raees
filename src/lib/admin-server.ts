@@ -24,6 +24,8 @@ async function ensureAdminSchema() {
     await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled boolean NOT NULL DEFAULT false`;
     await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at timestamptz`;
     await sql`CREATE TABLE IF NOT EXISTS admins (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), username text NOT NULL UNIQUE, password_hash text NOT NULL, role text NOT NULL DEFAULT 'admin' CHECK (role IN ('admin', 'super_admin')), created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
+    await sql`CREATE TABLE IF NOT EXISTS game_settings (key text PRIMARY KEY, value integer NOT NULL)`;
+    await sql`INSERT INTO game_settings (key,value) VALUES ('walls_per_player',10) ON CONFLICT (key) DO NOTHING`;
     await sql`ALTER TABLE admins ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'admin'`;
     await sql`UPDATE admins SET role='admin' WHERE role IS NULL OR role NOT IN ('admin', 'super_admin')`;
     await sql`CREATE UNIQUE INDEX IF NOT EXISTS admins_username_lower_idx ON admins (lower(username))`;
@@ -84,6 +86,18 @@ export async function handleAdminApi(request: Request): Promise<Response | null>
     if (url.pathname === "/api/admin/logout" && request.method === "POST") { const actor = await adminUser(request); if (actor) await audit("admin_logout", actor.username); return json({ ok: true }, 200, { "Set-Cookie": cookie("", 0) }); }
     const actor = await adminUser(request); if (!actor) return fail("Admin authentication required.", 401);
     if (url.pathname === "/api/admin/session" && request.method === "GET") return json({ admin: actor });
+    if (url.pathname === "/api/admin/game-settings" && request.method === "GET") {
+      const rows = await sql`SELECT value FROM game_settings WHERE key='walls_per_player'`;
+      return json({ settings: { wallsPerPlayer: Number(rows[0]?.value ?? 10) } });
+    }
+    if (url.pathname === "/api/admin/game-settings" && request.method === "PATCH") {
+      const input = await body(request);
+      const wallsPerPlayer = Number(input?.wallsPerPlayer);
+      if (!Number.isInteger(wallsPerPlayer) || wallsPerPlayer < 1 || wallsPerPlayer > 50) return fail("Wall count must be a whole number from 1 to 50.");
+      await sql`INSERT INTO game_settings (key,value) VALUES ('walls_per_player',${wallsPerPlayer}) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`;
+      await audit("game_settings_updated", actor.username, null, { wallsPerPlayer });
+      return json({ settings: { wallsPerPlayer } });
+    }
     if (url.pathname === "/api/admin/admins" && request.method === "GET") {
       if (actor.role !== "super_admin") return fail("Super admin access required.", 403);
       const admins = await sql`SELECT id,username,created_at FROM admins ORDER BY created_at ASC`;

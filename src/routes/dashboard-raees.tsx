@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  SlidersHorizontal,
   Sun,
   Swords,
   Trash2,
@@ -62,6 +63,7 @@ type Tab =
   | "analytics"
   | "activity"
   | "links"
+  | "game"
   | "admins";
 const tabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: "overview", label: "Overview", icon: Gauge },
@@ -72,13 +74,14 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: "analytics", label: "Analytics", icon: BarChart3 },
   { id: "activity", label: "Audit log", icon: Activity },
   { id: "links", label: "Social links", icon: Link2 },
+  { id: "game", label: "Game settings", icon: SlidersHorizontal },
   { id: "admins", label: "Administrators", icon: UserRoundCog },
 ];
 const navGroups: Array<{ label: string; ids: Tab[] }> = [
   { label: "Workspace", ids: ["overview", "analytics", "activity"] },
   { label: "Game operations", ids: ["rooms", "matches", "rankings"] },
   { label: "Directory", ids: ["users"] },
-  { label: "Configuration", ids: ["links", "admins"] },
+  { label: "Configuration", ids: ["links", "game", "admins"] },
 ];
 const number = new Intl.NumberFormat("en-US");
 const date = (value: string | null | undefined) =>
@@ -297,6 +300,7 @@ function AdminDashboard() {
         {tab === "analytics" && <AnalyticsPanel data={data} />}
         {tab === "activity" && <ActivityPanel activity={data.activity} />}
         {tab === "links" && <SocialLinksPanel initialLinks={data.links} />}
+        {tab === "game" && <GameSettingsPanel />}
         {tab === "admins" && <AdminsPanel admin={admin} onAdminChange={setAdmin} />}
       </main>
     </div>
@@ -399,6 +403,52 @@ function AdminLogin({
         <small className="admin-login-note">Protected by server-side session authorization</small>
       </form>
     </div>
+  );
+}
+
+function GameSettingsPanel() {
+  const [wallsPerPlayer, setWallsPerPlayer] = useState(10);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    void adminApi.gameSettings().then(({ settings }) => setWallsPerPlayer(settings.wallsPerPlayer)).catch((error) => setMessage(error instanceof Error ? error.message : "Could not load game settings."));
+  }, []);
+
+  async function save() {
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await adminApi.updateGameSettings({ wallsPerPlayer });
+      setWallsPerPlayer(result.settings.wallsPerPlayer);
+      setMessage("Saved. New matches and rematches will use this wall count.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save game settings.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="admin-section">
+      <div className="admin-section-head">
+        <div>
+          <p className="admin-eyebrow">Match rules</p>
+          <h2>Game settings</h2>
+        </div>
+      </div>
+      <p className="admin-panel-copy">Choose how many walls each player or computer receives at the start of a new match.</p>
+      <div className="admin-form-grid">
+        <label>
+          <span>Walls per player</span>
+          <input type="number" min={1} max={50} value={wallsPerPlayer} onChange={(event) => setWallsPerPlayer(Number(event.target.value))} />
+        </label>
+      </div>
+      <button type="button" className="admin-primary" onClick={() => void save()} disabled={busy || !Number.isInteger(wallsPerPlayer) || wallsPerPlayer < 1 || wallsPerPlayer > 50}>
+        {busy ? "Saving..." : "Save game settings"}
+      </button>
+      {message && <p className={message.startsWith("Saved") ? "admin-success" : "admin-error"}>{message}</p>}
+    </section>
   );
 }
 

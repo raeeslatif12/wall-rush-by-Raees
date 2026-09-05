@@ -25,6 +25,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+    gameConfig: () => request<{ wallsPerPlayer: number }>("/api/game-config"),
   session: () => request<{ user: ApiUser | null }>("/api/auth/session"),
   signup: (email: string, password: string, username: string) => request<{ user: ApiUser }>("/api/auth/signup", { method: "POST", body: JSON.stringify({ email, password, username }) }),
   login: (email: string, password: string) => request<{ user: ApiUser }>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),

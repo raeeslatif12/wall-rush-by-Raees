@@ -3,6 +3,7 @@ export interface AdminIdentity { id: string; username: string; role: AdminRole }
 export interface AdminAccount { id: string; username: string; role: AdminRole; created_at: string }
 export interface AdminUser { id: string; email: string; username: string; points: number; games: number; wins: number; losses: number; streak: number; disabled: boolean; created_at: string; last_active_at: string | null; rank?: number; match_count?: number }
 export interface SocialLink { id: string; label: string; url: string; icon: string; enabled: boolean; position: number; created_at: string; updated_at: string }
+export interface GameSettings { wallsPerPlayer: number }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers); if (init.body) headers.set("Content-Type", "application/json");
@@ -20,6 +21,8 @@ export const adminApi = {
   updateProfile: (username: string, password: string) => request<{ admin: AdminIdentity }>("/api/admin/profile", { method: "PATCH", body: JSON.stringify({ username, ...(password ? { password } : {}) }) }),
   logout: () => request<{ ok: true }>("/api/admin/logout", { method: "POST" }),
   overview: () => request<{ stats: Record<string, number> }>("/api/admin/overview"),
+    gameSettings: () => request<{ settings: GameSettings }>("/api/admin/game-settings"),
+    updateGameSettings: (settings: GameSettings) => request<{ settings: GameSettings }>("/api/admin/game-settings", { method: "PATCH", body: JSON.stringify(settings) }),
   users: (search = "") => request<{ users: AdminUser[] }>(`/api/admin/users?search=${encodeURIComponent(search)}`),
   user: (id: string) => request<{ user: AdminUser }>(`/api/admin/users/${id}`),
   userMatches: (id: string) => request<{ matches: any[] }>(`/api/admin/users/${id}/matches`),

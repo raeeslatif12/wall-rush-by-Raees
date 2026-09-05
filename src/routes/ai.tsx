@@ -4,6 +4,7 @@ import AppShell, { PageHeader } from "@/components/AppShell";
 import GameView from "@/components/GameView";
 import { DIFFICULTIES, chooseAction, type Difficulty } from "@/lib/ai";
 import { applyMove, applyWall, initialState, type GameState, type Pos, type Wall } from "@/lib/quoridor";
+import { api } from "@/lib/api";
 import { useApp } from "@/hooks/useAppState";
 import { beep, vibrate } from "@/lib/local";
 
@@ -26,15 +27,25 @@ function VsAI() {
   const app = useApp();
   const [difficulty, setDifficulty] = useState<Difficulty | null>(null);
   const [state, setState] = useState<GameState>(() => initialState());
+  const [wallsPerPlayer, setWallsPerPlayer] = useState(10);
   const [thinking, setThinking] = useState(false);
   const [resigned, setResigned] = useState(false);
   const recorded = useRef(false);
 
+  useEffect(() => {
+    void api.gameConfig().then(({ wallsPerPlayer: count }) => {
+      setWallsPerPlayer(count);
+      const inventory = { h: Math.ceil(count / 2), v: Math.floor(count / 2) };
+      setState((current) => current.moveCount === 0 ? { ...current, wallsLeft: [{ ...inventory }, { ...inventory }] } : current);
+    }).catch(() => {});
+  }, []);
+
   const reset = useCallback(() => {
-    setState(initialState());
+    const inventory = { h: Math.ceil(wallsPerPlayer / 2), v: Math.floor(wallsPerPlayer / 2) };
+    setState({ ...initialState(), wallsLeft: [{ ...inventory }, { ...inventory }] });
     setResigned(false);
     recorded.current = false;
-  }, []);
+  }, [wallsPerPlayer]);
 
   useEffect(() => {
     if (!difficulty || state.turn !== 1 || state.winner !== null || resigned) return;

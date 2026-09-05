@@ -31,6 +31,7 @@ function template() {
 
 export default function Board({ state, me, interactive, draggingOrient, preview, flipped, onMove, onPreview, onDrop }: Props) {
   const boardRef = useRef<HTMLDivElement>(null);
+  const dragPointerId = useRef<number | null>(null);
   const moves = useMemo(
     () => (interactive && !draggingOrient && state.winner === null ? legalMoves(state, me) : []),
     [state, me, interactive, draggingOrient],
@@ -113,7 +114,29 @@ export default function Board({ state, me, interactive, draggingOrient, preview,
       {cells}
       {wallEls}
       {preview && <div className={`pointer-events-none z-30 rounded-[3px] ${canPlaceWall(state, preview, me) ? "bg-blue-600/70" : "bg-destructive/70"}`} style={preview.o === "h" ? { gridRow: 2 * preview.r + 2, gridColumn: `${2 * preview.c + 1} / span 3`, height: "55%", alignSelf: "center" } : { gridColumn: 2 * preview.c + 2, gridRow: `${2 * preview.r + 1} / span 3`, width: "55%", justifySelf: "center" }} />}
-      {draggingOrient && <div className="absolute inset-0 z-40" onPointerMove={(event) => onPreview?.(wallAtPoint(event))} onPointerLeave={() => onPreview?.(null)} onPointerUp={(event) => { const wall = wallAtPoint(event); if (wall && canPlaceWall(state, wall, me)) onDrop?.(wall); }} />}
+      {draggingOrient && <div
+        className="absolute inset-0 z-40"
+        onPointerDown={(event) => {
+          dragPointerId.current = event.pointerId;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          onPreview?.(wallAtPoint(event));
+        }}
+        onPointerMove={(event) => {
+          onPreview?.(wallAtPoint(event));
+        }}
+        onPointerUp={(event) => {
+          const wall = wallAtPoint(event);
+          dragPointerId.current = null;
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+          if (wall && canPlaceWall(state, wall, me)) onDrop?.(wall);
+        }}
+        onPointerCancel={(event) => {
+          if (dragPointerId.current === event.pointerId) {
+            dragPointerId.current = null;
+            onPreview?.(null);
+          }
+        }}
+      />}
     </div>
   );
 }

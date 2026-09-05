@@ -29,7 +29,7 @@ export function initialState(): GameState {
       { r: 0, c: 4 },
     ],
     walls: [],
-    wallsLeft: [{ h: 1, v: 1 }, { h: 1, v: 1 }],
+    wallsLeft: [{ h: 5, v: 5 }, { h: 5, v: 5 }],
     turn: 0,
     winner: null,
     moveCount: 0,
