@@ -1104,6 +1104,7 @@ function UsersPanel({ users, onReload }: { users: AdminUser[]; onReload: () => P
               <th>User</th>
               <th>Status</th>
               <th>Points</th>
+              <th>Walls</th>
               <th>Record</th>
               <th>Created</th>
               <th />
@@ -1122,6 +1123,7 @@ function UsersPanel({ users, onReload }: { users: AdminUser[]; onReload: () => P
                   </span>
                 </td>
                 <td>{number.format(user.points)}</td>
+                <td>{user.walls_per_player === null ? "Global" : number.format(user.walls_per_player)}</td>
                 <td>
                   {user.wins}W / {user.losses}L
                 </td>
@@ -1166,6 +1168,15 @@ function UserDrawer({
   const [wallsPerPlayer, setWallsPerPlayer] = useState(user.walls_per_player === null ? "" : String(user.walls_per_player));
   const [disabled, setDisabled] = useState(user.disabled);
   const [password, setPassword] = useState("");
+  useEffect(() => {
+    setUsername(user.username);
+    setPoints(String(user.points));
+    setWins(String(user.wins));
+    setLosses(String(user.losses));
+    setWallsPerPlayer(user.walls_per_player === null ? "" : String(user.walls_per_player));
+    setDisabled(user.disabled);
+    setPassword("");
+  }, [user]);
   return (
     <div className="admin-drawer-backdrop" onClick={onClose}>
       <aside className="admin-drawer" onClick={(event) => event.stopPropagation()}>
