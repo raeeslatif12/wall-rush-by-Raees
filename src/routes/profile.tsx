@@ -137,14 +137,15 @@ function Toggle({
     <button
       type="button"
       onClick={() => onChange(!on)}
+      aria-pressed={on}
       className="flex w-full items-center justify-between px-4 py-3.5 text-left"
     >
       <span className="text-sm font-bold">{label}</span>
       <span
-        className={`h-6 w-11 rounded-full p-0.5 transition-colors ${on ? "bg-primary" : "bg-muted"}`}
+        className={`h-6 w-11 rounded-full border p-0.5 transition-colors ${on ? "border-primary bg-primary" : "border-input bg-muted"}`}
       >
         <span
-          className={`block h-5 w-5 rounded-full bg-background transition-transform ${on ? "translate-x-5" : ""}`}
+          className={`block h-5 w-5 rounded-full bg-card shadow-sm transition-transform ${on ? "translate-x-5" : ""}`}
         />
       </span>
     </button>
